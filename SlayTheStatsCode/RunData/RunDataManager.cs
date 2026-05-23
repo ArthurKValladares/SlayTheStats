@@ -5,27 +5,27 @@ using MegaCrit.Sts2.Core.Saves;
 namespace SlayTheStats.SlayTheStatsCode.RunData;
 
 
-public class RunData
+public class RunDataManager
 {
-    private static RunData? _instance;
+    private static RunDataManager? _instance;
     
     private readonly List<string> _runNames = new List<string>();
 
-    private static RunData ConstructDefault()
+    private static RunDataManager ConstructDefault()
     {
-        RunData runData = new RunData();
-        runData._runNames.Clear();
-        runData._runNames.AddRange((IEnumerable<string>) SaveManager.Instance.GetAllRunHistoryNames());
-        runData._runNames.Reverse();
-        return runData;
+        RunDataManager runDataManager = new RunDataManager();
+        runDataManager._runNames.Clear();
+        runDataManager._runNames.AddRange((IEnumerable<string>) SaveManager.Instance.GetAllRunHistoryNames());
+        runDataManager._runNames.Reverse();
+        return runDataManager;
     }
 
-    public static RunData Instance
+    public static RunDataManager Instance
     {
         get
         {
-            RunData._instance ??= RunData.ConstructDefault();
-            return RunData._instance;
+            RunDataManager._instance ??= RunDataManager.ConstructDefault();
+            return RunDataManager._instance;
         }
     }
 
