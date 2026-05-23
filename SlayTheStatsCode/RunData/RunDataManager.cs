@@ -1,6 +1,7 @@
 ﻿using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
+using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace SlayTheStats.SlayTheStatsCode.RunData;
 
@@ -9,14 +10,13 @@ public class RunDataManager
 {
     private static RunDataManager? _instance;
     
-    private readonly List<string> _runNames = new List<string>();
 
+    // TODO: This is very temp, just sketching stuff out
+    private Dictionary<SerializableCard, int> numberOfTimesEndedInDeck = new Dictionary<SerializableCard, int>();
+    
     private static RunDataManager ConstructDefault()
     {
         RunDataManager runDataManager = new RunDataManager();
-        runDataManager._runNames.Clear();
-        runDataManager._runNames.AddRange((IEnumerable<string>) SaveManager.Instance.GetAllRunHistoryNames());
-        runDataManager._runNames.Reverse();
         return runDataManager;
     }
 
@@ -29,13 +29,23 @@ public class RunDataManager
         }
     }
 
-    public void TryLoadTest()
+    public void AddRunToHistory(RunHistory runHistory)
     {
-        foreach (String name in _runNames)
+        foreach (SerializableCard card in runHistory.Players[0].Deck)
+        {
+            numberOfTimesEndedInDeck.TryGetValue(card, out int count);
+            numberOfTimesEndedInDeck[card] = count + 1;
+        }
+    }
+    
+    public void LoadAllRuns()
+    {
+        foreach (String name in SaveManager.Instance.GetAllRunHistoryNames())
         {
             ReadSaveResult<RunHistory> readSaveResult = SaveManager.Instance.LoadRunHistory(name);
             if (readSaveResult.Success)
             {
+                AddRunToHistory(readSaveResult.SaveData);
                 Log.Info($"Loaded run {name}");
             }
             else
