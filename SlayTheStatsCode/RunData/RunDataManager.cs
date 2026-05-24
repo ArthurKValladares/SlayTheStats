@@ -1,4 +1,6 @@
 ﻿using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Models;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Runs;
@@ -12,7 +14,7 @@ public class RunDataManager
     
 
     // TODO: This is very temp, just sketching stuff out
-    private Dictionary<SerializableCard, int> numberOfTimesEndedInDeck = new Dictionary<SerializableCard, int>();
+    private readonly Dictionary<ModelId, int> _numberOfTimesEndedInDeck = new();
     
     private static RunDataManager ConstructDefault()
     {
@@ -31,27 +33,58 @@ public class RunDataManager
 
     public void AddRunToHistory(RunHistory runHistory)
     {
-        foreach (SerializableCard card in runHistory.Players[0].Deck)
+        foreach (var player in runHistory.Players)
         {
-            numberOfTimesEndedInDeck.TryGetValue(card, out int count);
-            numberOfTimesEndedInDeck[card] = count + 1;
+            if (player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
+                continue;
+            
+            string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
+            Log.Info($"Adding Run to History for player {playerName} id: {player.Id}");
+
+            IEnumerable<SerializableCard>? deck = player?.Deck;
+            if (deck == null)
+                continue;
+            
+            foreach (SerializableCard card in deck)
+            {
+                ModelId? cardId = card?.Id;
+                if (cardId == null || cardId == ModelId.none)
+                    continue;
+                
+                _numberOfTimesEndedInDeck.TryGetValue(cardId, out int count);
+                _numberOfTimesEndedInDeck[cardId] = count + 1;
+            }   
         }
     }
     
     public void LoadAllRuns()
     {
-        foreach (String name in SaveManager.Instance.GetAllRunHistoryNames())
+        SaveManager saveManager = SaveManager.Instance;
+        List<string> runHistoryFileNames;
+
+        try
+        {
+            runHistoryFileNames = saveManager.GetAllRunHistoryNames();
+        }
+        catch (Exception ex)
+        {
+            return;
+        }
+        
+        foreach (String name in runHistoryFileNames)
         {
             ReadSaveResult<RunHistory> readSaveResult = SaveManager.Instance.LoadRunHistory(name);
-            if (readSaveResult.Success)
-            {
-                AddRunToHistory(readSaveResult.SaveData);
-                Log.Info($"Loaded run {name}");
-            }
-            else
-            {
-                Log.Error($"Could not load run {name}");
-            }
+            
+            if (!readSaveResult.Success || readSaveResult.SaveData == null)
+                continue;
+            
+            Log.Info($"Loaded run {name}");
+            AddRunToHistory(readSaveResult.SaveData);
         }
+    }
+
+    public int GetTimesInDeck(ModelId id)
+    {
+        return _numberOfTimesEndedInDeck.GetValueOrDefault(id);        
     }
 }
