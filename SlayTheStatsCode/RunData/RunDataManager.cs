@@ -15,7 +15,8 @@ public class RunDataManager
 
     // TODO: This is very temp, just sketching stuff out
     private readonly Dictionary<ModelId, int> _numberOfTimesEndedInDeck = new();
-    
+    private readonly Dictionary<ModelId, int> _numberOfWins = new();
+
     private static RunDataManager ConstructDefault()
     {
         RunDataManager runDataManager = new RunDataManager();
@@ -31,6 +32,32 @@ public class RunDataManager
         }
     }
 
+    private void AddDeckDataToRunHistory(RunHistory runHistory, RunHistoryPlayer player)
+    {
+        IEnumerable<SerializableCard>? deck = player?.Deck;
+        if (deck == null) return;
+
+        // TODO: This logic here is very temporary, just for testing.
+        HashSet<ModelId> alreadySeenCards = new();
+        foreach (SerializableCard card in deck)
+        {
+            ModelId? cardId = card?.Id;
+            if (cardId == null || cardId == ModelId.none || alreadySeenCards.Contains(cardId))
+                continue;
+                
+            alreadySeenCards.Add(cardId);
+                
+            _numberOfTimesEndedInDeck.TryGetValue(cardId, out int cardCount);
+            _numberOfTimesEndedInDeck[cardId] = cardCount + 1;
+
+            if (runHistory.Win)
+            {
+                _numberOfWins.TryGetValue(cardId, out int winCount);
+                _numberOfWins[cardId] = winCount + 1;
+            }
+        }   
+    }
+    
     public void AddRunToHistory(RunHistory runHistory)
     {
         foreach (var player in runHistory.Players)
@@ -41,19 +68,7 @@ public class RunDataManager
             string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
             Log.Info($"Adding run {runHistory.StartTime} to history for player {playerName} id: {player.Id}");
 
-            IEnumerable<SerializableCard>? deck = player?.Deck;
-            if (deck == null)
-                continue;
-            
-            foreach (SerializableCard card in deck)
-            {
-                ModelId? cardId = card?.Id;
-                if (cardId == null || cardId == ModelId.none)
-                    continue;
-                
-                _numberOfTimesEndedInDeck.TryGetValue(cardId, out int count);
-                _numberOfTimesEndedInDeck[cardId] = count + 1;
-            }   
+            AddDeckDataToRunHistory(runHistory, player);
         }
     }
     
@@ -83,8 +98,13 @@ public class RunDataManager
         }
     }
 
-    public int GetTimesInDeck(ModelId id)
+    public float GetWinPercentage(ModelId id)
     {
-        return _numberOfTimesEndedInDeck.GetValueOrDefault(id);        
+        int endedInDeckCount = _numberOfTimesEndedInDeck.GetValueOrDefault(id);
+        if (endedInDeckCount == 0) return 0.0f;
+        
+        int winCount = _numberOfWins.GetValueOrDefault(id);
+        
+        return winCount / (float) endedInDeckCount;        
     }
 }
