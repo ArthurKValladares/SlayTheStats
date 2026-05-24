@@ -35,11 +35,11 @@ public class RunDataManager
     {
         foreach (var player in runHistory.Players)
         {
-            if (player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
+            if (player.Id != 1 && player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
                 continue;
             
             string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
-            Log.Info($"Adding Run to History for player {playerName} id: {player.Id}");
+            Log.Info($"Adding run {runHistory.StartTime} to history for player {playerName} id: {player.Id}");
 
             IEnumerable<SerializableCard>? deck = player?.Deck;
             if (deck == null)
@@ -65,6 +65,7 @@ public class RunDataManager
         try
         {
             runHistoryFileNames = saveManager.GetAllRunHistoryNames();
+            Log.Info($"Loaded {runHistoryFileNames.Count} run history files");
         }
         catch (Exception ex)
         {
@@ -78,7 +79,6 @@ public class RunDataManager
             if (!readSaveResult.Success || readSaveResult.SaveData == null)
                 continue;
             
-            Log.Info($"Loaded run {name}");
             AddRunToHistory(readSaveResult.SaveData);
         }
     }
