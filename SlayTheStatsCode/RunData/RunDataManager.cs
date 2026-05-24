@@ -1,7 +1,10 @@
-﻿using MegaCrit.Sts2.Core.Logging;
+﻿using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
+using MegaCrit.Sts2.Core.Map;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
+using MegaCrit.Sts2.Core.Runs.History;
 using MegaCrit.Sts2.Core.Saves;
 using MegaCrit.Sts2.Core.Saves.Runs;
 
@@ -16,7 +19,10 @@ public class RunDataManager
     // TODO: This is very temp, just sketching stuff out
     private readonly Dictionary<ModelId, int> _numberOfTimesEndedInDeck = new();
     private readonly Dictionary<ModelId, int> _numberOfWins = new();
-
+    
+    private readonly Dictionary<string, int> _ancientNumberOfTimesShown = new();
+    private readonly Dictionary<string, int> _ancientNumberOfTimesChosen = new();
+    
     private static RunDataManager ConstructDefault()
     {
         RunDataManager runDataManager = new RunDataManager();
@@ -42,11 +48,9 @@ public class RunDataManager
         foreach (SerializableCard card in deck)
         {
             ModelId? cardId = card?.Id;
-            if (cardId == null || cardId == ModelId.none || alreadySeenCards.Contains(cardId))
+            if (cardId == null || cardId == ModelId.none || !alreadySeenCards.Add(cardId))
                 continue;
-                
-            alreadySeenCards.Add(cardId);
-                
+
             _numberOfTimesEndedInDeck.TryGetValue(cardId, out int cardCount);
             _numberOfTimesEndedInDeck[cardId] = cardCount + 1;
 
@@ -56,6 +60,59 @@ public class RunDataManager
                 _numberOfWins[cardId] = winCount + 1;
             }
         }   
+    }
+    
+    private void AddRelicDataToRunHistory(RunHistory runHistory, RunHistoryPlayer player)
+    {
+        IEnumerable<SerializableRelic>? relics = player?.Relics;
+        if (relics == null) return;
+
+        // TODO: This logic here is very temporary, just for testing.
+        HashSet<ModelId> alreadySeenRelics = new();
+        foreach (SerializableRelic relic in relics)
+        {
+            ModelId? relicId = relic?.Id;
+            if (relicId == null || relicId == ModelId.none || !alreadySeenRelics.Add(relicId))
+                continue;
+
+            _numberOfTimesEndedInDeck.TryGetValue(relicId, out int cardCount);
+            _numberOfTimesEndedInDeck[relicId] = cardCount + 1;
+
+            if (runHistory.Win)
+            {
+                _numberOfWins.TryGetValue(relicId, out int winCount);
+                _numberOfWins[relicId] = winCount + 1;
+            }
+        }   
+    }
+
+    private void AddAncientDataToRunHistory(RunHistory runHistory)
+    {
+        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
+
+        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        {
+            var ancient = actHistory.Find(entry => entry.MapPointType == MapPointType.Ancient);
+            
+            if (ancient == null) continue;
+            
+            foreach (PlayerMapPointHistoryEntry playerStat in ancient.PlayerStats)
+            {
+                foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
+                {
+                    string key = ancientChoice.Title.LocEntryKey;
+                    
+                    _ancientNumberOfTimesShown.TryGetValue(key, out int shownCount);
+                    _ancientNumberOfTimesShown[key] = shownCount + 1;
+
+                    if (ancientChoice.WasChosen)
+                    {
+                        _ancientNumberOfTimesChosen.TryGetValue(key, out int chosenCount);
+                        _ancientNumberOfTimesChosen[key] = chosenCount + 1;
+                    }
+                }
+            }
+        }
     }
     
     public void AddRunToHistory(RunHistory runHistory)
@@ -69,6 +126,9 @@ public class RunDataManager
             Log.Info($"Adding run {runHistory.StartTime} to history for player {playerName} id: {player.Id}");
 
             AddDeckDataToRunHistory(runHistory, player);
+            AddRelicDataToRunHistory(runHistory, player);
+
+            AddAncientDataToRunHistory(runHistory);
         }
     }
     
@@ -105,6 +165,17 @@ public class RunDataManager
         
         int winCount = _numberOfWins.GetValueOrDefault(id);
         
-        return winCount / (float) endedInDeckCount;        
+        return winCount / (float) endedInDeckCount;
+    }
+    
+    public float GetPickPercentage(LocString title)
+    {
+        string key = title.LocEntryKey;
+        
+        int timesShown = _ancientNumberOfTimesShown.GetValueOrDefault(key);
+        if (timesShown == 0) return 0.0f;
+        
+        int pickCount = _ancientNumberOfTimesChosen.GetValueOrDefault(key);
+        return pickCount / (float) timesShown;
     }
 }

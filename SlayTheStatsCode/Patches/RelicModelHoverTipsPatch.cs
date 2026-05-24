@@ -1,6 +1,9 @@
 ﻿using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
+using MegaCrit.Sts2.Core.Localization;
+using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Models;
+using SlayTheStats.SlayTheStatsCode.RunData;
 
 namespace SlayTheStats.SlayTheStatsCode.Patches;
 
@@ -15,7 +18,10 @@ public static class RelicModelHoverTipsPatch
         var tip = new HoverTip();
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Test");
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, "This is a test");
+        float winPercentage = RunDataManager.Instance.GetWinPercentage(__instance.Id) * 100.0f;
+        float pickPercentage = RunDataManager.Instance.GetPickPercentage(__instance.Title);
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Win Percentage {winPercentage}% Pick Percentage {pickPercentage}%");
+
         tip = (HoverTip)boxed;
         
         var list = __result.ToList();
