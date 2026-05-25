@@ -15,13 +15,15 @@ public class RunDataManager
 {
     private static RunDataManager? _instance;
     
-
     // TODO: This is very temp, just sketching stuff out
     private readonly Dictionary<ModelId, int> _numberOfTimesEndedInDeck = new();
     private readonly Dictionary<ModelId, int> _numberOfWins = new();
     
     private readonly Dictionary<string, int> _ancientNumberOfTimesShown = new();
     private readonly Dictionary<string, int> _ancientNumberOfTimesChosen = new();
+    
+    private readonly Dictionary<ModelId, int> _cardNumberOfTimesShownInReward = new();
+    private readonly Dictionary<ModelId, int> _cardNumberOfTimesChosenInReward = new();
     
     private static RunDataManager ConstructDefault()
     {
@@ -86,29 +88,60 @@ public class RunDataManager
         }   
     }
 
-    private void AddAncientDataToRunHistory(RunHistory runHistory)
+    private void AddAncientDataToRunHistory(RunHistory runHistory, ulong playerId)
     {
         List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
 
         foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
         {
             var ancient = actHistory.Find(entry => entry.MapPointType == MapPointType.Ancient);
-            
             if (ancient == null) continue;
-            
-            foreach (PlayerMapPointHistoryEntry playerStat in ancient.PlayerStats)
-            {
-                foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
-                {
-                    string key = ancientChoice.Title.LocEntryKey;
-                    
-                    _ancientNumberOfTimesShown.TryGetValue(key, out int shownCount);
-                    _ancientNumberOfTimesShown[key] = shownCount + 1;
 
-                    if (ancientChoice.WasChosen)
+            PlayerMapPointHistoryEntry? playerStat = ancient.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
+            if (playerStat == null) continue;
+            
+            foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
+            {
+                string key = ancientChoice.Title.LocEntryKey;
+
+                _ancientNumberOfTimesShown.TryGetValue(key, out int shownCount);
+                _ancientNumberOfTimesShown[key] = shownCount + 1;
+
+                if (ancientChoice.WasChosen)
+                {
+                    _ancientNumberOfTimesChosen.TryGetValue(key, out int chosenCount);
+                    _ancientNumberOfTimesChosen[key] = chosenCount + 1;
+                }
+            }
+        }
+    }
+    
+    private void AddCardRewardDataToRunHistory(RunHistory runHistory, ulong playerId)
+    {
+        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
+
+        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        {
+            foreach (MapPointHistoryEntry entry in actHistory)
+            {
+                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
+                if (playerStat == null) continue;
+
+                if (playerStat.CardChoices.Count() != 0 && entry.MapPointType != MapPointType.Shop)
+                {
+                    foreach (CardChoiceHistoryEntry cardChoice in playerStat.CardChoices)
                     {
-                        _ancientNumberOfTimesChosen.TryGetValue(key, out int chosenCount);
-                        _ancientNumberOfTimesChosen[key] = chosenCount + 1;
+                        ModelId? id = cardChoice.Card.Id;
+                        if (id == null) continue;
+                        
+                        _cardNumberOfTimesShownInReward.TryGetValue(id, out int shownCount);
+                        _cardNumberOfTimesShownInReward[id] = shownCount + 1;
+
+                        if (cardChoice.wasPicked)
+                        {
+                            _cardNumberOfTimesChosenInReward.TryGetValue(id, out int chosenCount);
+                            _cardNumberOfTimesChosenInReward[id] = chosenCount + 1;
+                        }
                     }
                 }
             }
@@ -128,7 +161,9 @@ public class RunDataManager
             AddDeckDataToRunHistory(runHistory, player);
             AddRelicDataToRunHistory(runHistory, player);
 
-            AddAncientDataToRunHistory(runHistory);
+            AddAncientDataToRunHistory(runHistory, player.Id);
+            
+            AddCardRewardDataToRunHistory(runHistory, player.Id);
         }
     }
     
@@ -168,7 +203,7 @@ public class RunDataManager
         return winCount / (float) endedInDeckCount;
     }
     
-    public float GetPickPercentage(LocString title)
+    public float GetAncientPickPercentage(LocString title)
     {
         string key = title.LocEntryKey;
         
@@ -176,6 +211,17 @@ public class RunDataManager
         if (timesShown == 0) return 0.0f;
         
         int pickCount = _ancientNumberOfTimesChosen.GetValueOrDefault(key);
+
         return pickCount / (float) timesShown;
+    }
+
+    public float GetCardRewardPickPercentage(ModelId id)
+    {
+        int numberOfTimesShown = _cardNumberOfTimesShownInReward.GetValueOrDefault(id);
+        if(numberOfTimesShown == 0) return 0.0f;
+
+        int numberOfTimesChosen = _cardNumberOfTimesChosenInReward.GetValueOrDefault(id);
+        
+        return numberOfTimesChosen / (float) numberOfTimesShown;
     }
 }
