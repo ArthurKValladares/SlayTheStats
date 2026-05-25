@@ -18,7 +18,7 @@ public static class RelicModelHoverTipsPatch
         var tip = new HoverTip();
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Test");
-        float winPercentage = RunDataManager.Instance.GetWinPercentage(__instance.Id) * 100.0f;
+        float winPercentage = RunDataManager.Instance.GetRelicWinPercentage(__instance.Id) * 100.0f;
         float ancientPickPercentage = RunDataManager.Instance.GetAncientPickPercentage(__instance.Title);
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Win Percentage {winPercentage}%\nAncient Pick Percentage {ancientPickPercentage}%");
 

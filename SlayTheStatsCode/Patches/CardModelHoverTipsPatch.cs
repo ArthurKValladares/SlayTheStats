@@ -17,7 +17,7 @@ public static class CardModelHoverTipsPatch
         object boxed = tip;
         
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Test");
-        float winPercentage = RunDataManager.Instance.GetWinPercentage(__instance.Id) * 100.0f;
+        float winPercentage = RunDataManager.Instance.GetCardWinPercentage(__instance.Id) * 100.0f;
         float rewardPickPercentage = RunDataManager.Instance.GetCardRewardPickPercentage(__instance.Id) * 100.0f;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Win Percentage {winPercentage}%\nCard Reward Pick Percentage {rewardPickPercentage}");
 

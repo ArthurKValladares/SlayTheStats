@@ -10,20 +10,42 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace SlayTheStats.SlayTheStatsCode.RunData;
 
+ public class SuccessRateTracker<TK> where TK : notnull
+ {
+    public void Attempted(TK key)
+    {
+        _numAttempt.TryGetValue(key, out int count);
+        _numAttempt[key] = count + 1;
+    }
+    
+    public void Succeeded(TK key)
+    {
+        _numSuccess.TryGetValue(key, out int count);
+        _numSuccess[key] = count + 1;
+    }
+
+    public float SuccessRate(TK key)
+    {
+        int numAttempts = _numAttempt.GetValueOrDefault(key);
+        if(numAttempts == 0) return 0.0f;
+
+        int numSuccess = _numSuccess.GetValueOrDefault(key);
+        
+        return numSuccess / (float) numAttempts;
+    }
+    
+    private readonly Dictionary<TK, int> _numAttempt = new();
+    private readonly Dictionary<TK, int> _numSuccess = new();   
+}
 
 public class RunDataManager
 {
     private static RunDataManager? _instance;
     
-    // TODO: This is very temp, just sketching stuff out
-    private readonly Dictionary<ModelId, int> _numberOfTimesEndedInDeck = new();
-    private readonly Dictionary<ModelId, int> _numberOfWins = new();
-    
-    private readonly Dictionary<string, int> _ancientNumberOfTimesShown = new();
-    private readonly Dictionary<string, int> _ancientNumberOfTimesChosen = new();
-    
-    private readonly Dictionary<ModelId, int> _cardNumberOfTimesShownInReward = new();
-    private readonly Dictionary<ModelId, int> _cardNumberOfTimesChosenInReward = new();
+    private readonly SuccessRateTracker<ModelId> _wonWithCard = new();
+    private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
+    private readonly SuccessRateTracker<string> _pickedAncientRelic = new();
+    private readonly SuccessRateTracker<ModelId> _pickedFromCardReward = new();
     
     private static RunDataManager ConstructDefault()
     {
@@ -40,12 +62,11 @@ public class RunDataManager
         }
     }
 
-    private void AddDeckDataToRunHistory(RunHistory runHistory, RunHistoryPlayer player)
+    private void RecordCardWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
         IEnumerable<SerializableCard>? deck = player?.Deck;
         if (deck == null) return;
-
-        // TODO: This logic here is very temporary, just for testing.
+        
         HashSet<ModelId> alreadySeenCards = new();
         foreach (SerializableCard card in deck)
         {
@@ -53,42 +74,37 @@ public class RunDataManager
             if (cardId == null || cardId == ModelId.none || !alreadySeenCards.Add(cardId))
                 continue;
 
-            _numberOfTimesEndedInDeck.TryGetValue(cardId, out int cardCount);
-            _numberOfTimesEndedInDeck[cardId] = cardCount + 1;
-
+            _wonWithCard.Attempted(cardId);
+            
             if (runHistory.Win)
             {
-                _numberOfWins.TryGetValue(cardId, out int winCount);
-                _numberOfWins[cardId] = winCount + 1;
+                _wonWithCard.Succeeded(cardId);
             }
         }   
     }
     
-    private void AddRelicDataToRunHistory(RunHistory runHistory, RunHistoryPlayer player)
+    private void RecordRelicWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
         IEnumerable<SerializableRelic>? relics = player?.Relics;
         if (relics == null) return;
-
-        // TODO: This logic here is very temporary, just for testing.
+        
         HashSet<ModelId> alreadySeenRelics = new();
         foreach (SerializableRelic relic in relics)
         {
             ModelId? relicId = relic?.Id;
             if (relicId == null || relicId == ModelId.none || !alreadySeenRelics.Add(relicId))
                 continue;
-
-            _numberOfTimesEndedInDeck.TryGetValue(relicId, out int cardCount);
-            _numberOfTimesEndedInDeck[relicId] = cardCount + 1;
+            
+            _wonWithRelic.Attempted(relicId);
 
             if (runHistory.Win)
             {
-                _numberOfWins.TryGetValue(relicId, out int winCount);
-                _numberOfWins[relicId] = winCount + 1;
+                _wonWithRelic.Succeeded(relicId);
             }
         }   
     }
 
-    private void AddAncientDataToRunHistory(RunHistory runHistory, ulong playerId)
+    private void RecordAncientPickData(RunHistory runHistory, ulong playerId)
     {
         List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
 
@@ -103,20 +119,18 @@ public class RunDataManager
             foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
             {
                 string key = ancientChoice.Title.LocEntryKey;
-
-                _ancientNumberOfTimesShown.TryGetValue(key, out int shownCount);
-                _ancientNumberOfTimesShown[key] = shownCount + 1;
+                
+                _pickedAncientRelic.Attempted(key);
 
                 if (ancientChoice.WasChosen)
                 {
-                    _ancientNumberOfTimesChosen.TryGetValue(key, out int chosenCount);
-                    _ancientNumberOfTimesChosen[key] = chosenCount + 1;
+                    _pickedAncientRelic.Succeeded(key);
                 }
             }
         }
     }
     
-    private void AddCardRewardDataToRunHistory(RunHistory runHistory, ulong playerId)
+    private void RecordCardRewardPickData(RunHistory runHistory, ulong playerId)
     {
         List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
 
@@ -134,13 +148,11 @@ public class RunDataManager
                         ModelId? id = cardChoice.Card.Id;
                         if (id == null) continue;
                         
-                        _cardNumberOfTimesShownInReward.TryGetValue(id, out int shownCount);
-                        _cardNumberOfTimesShownInReward[id] = shownCount + 1;
+                        _pickedFromCardReward.Attempted(id);
 
                         if (cardChoice.wasPicked)
                         {
-                            _cardNumberOfTimesChosenInReward.TryGetValue(id, out int chosenCount);
-                            _cardNumberOfTimesChosenInReward[id] = chosenCount + 1;
+                            _pickedFromCardReward.Succeeded(id);
                         }
                     }
                 }
@@ -158,12 +170,12 @@ public class RunDataManager
             string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
             Log.Info($"Adding run {runHistory.StartTime} to history for player {playerName} id: {player.Id}");
 
-            AddDeckDataToRunHistory(runHistory, player);
-            AddRelicDataToRunHistory(runHistory, player);
+            RecordCardWinData(runHistory, player);
+            RecordRelicWinData(runHistory, player);
 
-            AddAncientDataToRunHistory(runHistory, player.Id);
+            RecordAncientPickData(runHistory, player.Id);
             
-            AddCardRewardDataToRunHistory(runHistory, player.Id);
+            RecordCardRewardPickData(runHistory, player.Id);
         }
     }
     
@@ -193,35 +205,25 @@ public class RunDataManager
         }
     }
 
-    public float GetWinPercentage(ModelId id)
+    public float GetCardWinPercentage(ModelId id)
     {
-        int endedInDeckCount = _numberOfTimesEndedInDeck.GetValueOrDefault(id);
-        if (endedInDeckCount == 0) return 0.0f;
-        
-        int winCount = _numberOfWins.GetValueOrDefault(id);
-        
-        return winCount / (float) endedInDeckCount;
+        return _wonWithCard.SuccessRate(id);
+    }
+    
+    public float GetRelicWinPercentage(ModelId id)
+    {
+        return _wonWithRelic.SuccessRate(id);
     }
     
     public float GetAncientPickPercentage(LocString title)
     {
         string key = title.LocEntryKey;
         
-        int timesShown = _ancientNumberOfTimesShown.GetValueOrDefault(key);
-        if (timesShown == 0) return 0.0f;
-        
-        int pickCount = _ancientNumberOfTimesChosen.GetValueOrDefault(key);
-
-        return pickCount / (float) timesShown;
+        return _pickedAncientRelic.SuccessRate(key);
     }
 
     public float GetCardRewardPickPercentage(ModelId id)
     {
-        int numberOfTimesShown = _cardNumberOfTimesShownInReward.GetValueOrDefault(id);
-        if(numberOfTimesShown == 0) return 0.0f;
-
-        int numberOfTimesChosen = _cardNumberOfTimesChosenInReward.GetValueOrDefault(id);
-        
-        return numberOfTimesChosen / (float) numberOfTimesShown;
+        return _pickedFromCardReward.SuccessRate(id);
     }
 }
