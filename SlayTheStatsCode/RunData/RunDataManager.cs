@@ -64,6 +64,25 @@ public class RunDataManager
         }
     }
 
+    private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
+        RunHistory runHistory,
+        ulong playerId,
+        Func<MapPointHistoryEntry, bool>? filter = null)
+    {
+        foreach (List<MapPointHistoryEntry> actHistory in runHistory.MapPointHistory)
+        {
+            foreach (MapPointHistoryEntry entry in actHistory)
+            {
+                if (filter != null && !filter(entry)) continue;
+
+                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(ps => ps.PlayerId == playerId);
+                if (playerStat == null) continue;
+
+                yield return (entry, playerStat);
+            }
+        }
+    }
+    
     private void RecordCardWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
         IEnumerable<SerializableCard>? deck = player?.Deck;
@@ -105,123 +124,77 @@ public class RunDataManager
             }
         }   
     }
-
+    
     private void RecordAncientPickData(RunHistory runHistory, ulong playerId)
     {
-        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
-
-        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, 
+                     e => e.MapPointType == MapPointType.Ancient))
         {
-            var ancient = actHistory.Find(entry => entry.MapPointType == MapPointType.Ancient);
-            if (ancient == null) continue;
-
-            PlayerMapPointHistoryEntry? playerStat = ancient.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
-            if (playerStat == null) continue;
-            
             foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
             {
                 string key = ancientChoice.Title.LocEntryKey;
-                
-                _pickedAncientRelic.Attempted(key);
 
+                _pickedAncientRelic.Attempted(key);
                 if (ancientChoice.WasChosen)
-                {
                     _pickedAncientRelic.Succeeded(key);
-                }
             }
         }
     }
     
     private void RecordCardRewardPickData(RunHistory runHistory, ulong playerId)
     {
-        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
-
-        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId,
+                     e => e.MapPointType != MapPointType.Shop))
         {
-            foreach (MapPointHistoryEntry entry in actHistory)
+            foreach (CardChoiceHistoryEntry cardChoice in playerStat.CardChoices)
             {
-                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
-                if (playerStat == null) continue;
+                ModelId? id = cardChoice.Card.Id;
+                if (id == null) continue;
 
-                if (playerStat.CardChoices.Count() != 0 && entry.MapPointType != MapPointType.Shop)
-                {
-                    foreach (CardChoiceHistoryEntry cardChoice in playerStat.CardChoices)
-                    {
-                        ModelId? id = cardChoice.Card.Id;
-                        if (id == null) continue;
-                        
-                        _pickedFromCardReward.Attempted(id);
-
-                        if (cardChoice.wasPicked)
-                        {
-                            _pickedFromCardReward.Succeeded(id);
-                        }
-                    }
-                }
-            }
+                _pickedFromCardReward.Attempted(id);
+                if (cardChoice.wasPicked)
+                    _pickedFromCardReward.Succeeded(id);
+            }   
         }
     }
-
+    
     public void RecordShopCardPurchaseData(RunHistory runHistory, ulong playerId)
     {
-        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
-
-        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, 
+                     e => e.MapPointType == MapPointType.Shop))
         {
-            foreach (MapPointHistoryEntry entry in actHistory)
+            foreach (CardChoiceHistoryEntry cardOffered in playerStat.CardChoices)
             {
-                if (entry.MapPointType != MapPointType.Shop) continue;
-                
-                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
-                if (playerStat == null) continue;
-
-
-                foreach (CardChoiceHistoryEntry cardOffered in playerStat.CardChoices)
-                {
-                    ModelId? id = cardOffered.Card.Id;
-                    if (id == null) continue;
+                ModelId? id = cardOffered.Card.Id;
+                if (id == null) continue;
                     
-                    _boughtCardFromShop.Attempted(id);
-                }
+                _boughtCardFromShop.Attempted(id);
+            }
+            
+            foreach (SerializableCard cardBought in playerStat.CardsGained)
+            {
+                ModelId? id = cardBought.Id;
+                if (id == null) continue;
 
-                foreach (SerializableCard cardBought in playerStat.CardsGained)
-                {
-                    ModelId? id = cardBought.Id;
-                    if (id == null) continue;
-                    
-                    _boughtCardFromShop.Attempted(id);
-                    _boughtCardFromShop.Succeeded(id);
-                }
+                _boughtCardFromShop.Attempted(id);
+                _boughtCardFromShop.Succeeded(id);
             }
         }
     }
     
     public void RecordShopRelicPurchaseData(RunHistory runHistory, ulong playerId)
     {
-        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
-
-        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType == MapPointType.Shop))
         {
-            foreach (MapPointHistoryEntry entry in actHistory)
+            foreach (ModelChoiceHistoryEntry relicOffered in playerStat.RelicChoices)
             {
-                if (entry.MapPointType != MapPointType.Shop) continue;
-                
-                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
-                if (playerStat == null) continue;
+                _boughtRelicFromShop.Attempted(relicOffered.choice);
+            }
 
-
-                foreach (ModelChoiceHistoryEntry relicOffered in playerStat.RelicChoices)
-                {
-                    ModelId id = relicOffered.choice;
-                    
-                    _boughtRelicFromShop.Attempted(id);
-                }
-
-                foreach (ModelId id in playerStat.BoughtRelics)
-                {
-                    _boughtRelicFromShop.Attempted(id);
-                    _boughtRelicFromShop.Succeeded(id);
-                }
+            foreach (ModelId id in playerStat.BoughtRelics)
+            {
+                _boughtRelicFromShop.Attempted(id);
+                _boughtRelicFromShop.Succeeded(id);
             }
         }
     }
