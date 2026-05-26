@@ -46,6 +46,8 @@ public class RunDataManager
     private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
     private readonly SuccessRateTracker<string> _pickedAncientRelic = new();
     private readonly SuccessRateTracker<ModelId> _pickedFromCardReward = new();
+    private readonly SuccessRateTracker<ModelId> _boughtCardFromShop = new();
+    private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
     private static RunDataManager ConstructDefault()
     {
@@ -159,6 +161,70 @@ public class RunDataManager
             }
         }
     }
+
+    public void RecordShopCardPurchaseData(RunHistory runHistory, ulong playerId)
+    {
+        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
+
+        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        {
+            foreach (MapPointHistoryEntry entry in actHistory)
+            {
+                if (entry.MapPointType != MapPointType.Shop) continue;
+                
+                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
+                if (playerStat == null) continue;
+
+
+                foreach (CardChoiceHistoryEntry cardOffered in playerStat.CardChoices)
+                {
+                    ModelId? id = cardOffered.Card.Id;
+                    if (id == null) continue;
+                    
+                    _boughtCardFromShop.Attempted(id);
+                }
+
+                foreach (SerializableCard cardBought in playerStat.CardsGained)
+                {
+                    ModelId? id = cardBought.Id;
+                    if (id == null) continue;
+                    
+                    _boughtCardFromShop.Attempted(id);
+                    _boughtCardFromShop.Succeeded(id);
+                }
+            }
+        }
+    }
+    
+    public void RecordShopRelicPurchaseData(RunHistory runHistory, ulong playerId)
+    {
+        List<List<MapPointHistoryEntry>> mapHistory = runHistory.MapPointHistory;
+
+        foreach (List<MapPointHistoryEntry> actHistory in mapHistory)
+        {
+            foreach (MapPointHistoryEntry entry in actHistory)
+            {
+                if (entry.MapPointType != MapPointType.Shop) continue;
+                
+                PlayerMapPointHistoryEntry? playerStat = entry.PlayerStats.Find(playerStat => playerStat.PlayerId == playerId);
+                if (playerStat == null) continue;
+
+
+                foreach (ModelChoiceHistoryEntry relicOffered in playerStat.RelicChoices)
+                {
+                    ModelId id = relicOffered.choice;
+                    
+                    _boughtRelicFromShop.Attempted(id);
+                }
+
+                foreach (ModelId id in playerStat.BoughtRelics)
+                {
+                    _boughtRelicFromShop.Attempted(id);
+                    _boughtRelicFromShop.Succeeded(id);
+                }
+            }
+        }
+    }
     
     public void AddRunToHistory(RunHistory runHistory)
     {
@@ -176,6 +242,9 @@ public class RunDataManager
             RecordAncientPickData(runHistory, player.Id);
             
             RecordCardRewardPickData(runHistory, player.Id);
+            
+            RecordShopCardPurchaseData(runHistory, player.Id);
+            RecordShopRelicPurchaseData(runHistory, player.Id);
         }
     }
     
@@ -225,5 +294,15 @@ public class RunDataManager
     public float GetCardRewardPickPercentage(ModelId id)
     {
         return _pickedFromCardReward.SuccessRate(id);
+    }
+    
+    public float GetCardBuyPercentage(ModelId id)
+    {
+        return _boughtCardFromShop.SuccessRate(id);
+    }
+    
+    public float GetRelicPurchasePercentage(ModelId id)
+    {
+        return _boughtRelicFromShop.SuccessRate(id);
     }
 }
