@@ -10,6 +10,11 @@ using MegaCrit.Sts2.Core.Saves.Runs;
 
 namespace SlayTheStats.SlayTheStatsCode.RunData;
 
+file static class LocalConstants
+{
+    public const int DefaultPlayerId = 1;    
+}
+
  public class SuccessRateTracker<TK> where TK : notnull
  {
     public void Attempted(TK key)
@@ -24,6 +29,15 @@ namespace SlayTheStats.SlayTheStatsCode.RunData;
         _numSuccess[key] = count + 1;
     }
 
+    public void Record(TK key, bool success)
+    {
+        Attempted(key);
+        if (success)
+        {
+            Succeeded(key);
+        }
+    }
+    
     public float SuccessRate(TK key)
     {
         int numAttempts = _numAttempt.GetValueOrDefault(key);
@@ -132,11 +146,7 @@ public class RunDataManager
         {
             foreach (AncientChoiceHistoryEntry ancientChoice in playerStat.AncientChoices)
             {
-                string key = ancientChoice.Title.LocEntryKey;
-
-                _pickedAncientRelic.Attempted(key);
-                if (ancientChoice.WasChosen)
-                    _pickedAncientRelic.Succeeded(key);
+                _pickedAncientRelic.Record(ancientChoice.Title.LocEntryKey, ancientChoice.WasChosen);
             }
         }
     }
@@ -151,9 +161,7 @@ public class RunDataManager
                 ModelId? id = cardChoice.Card.Id;
                 if (id == null) continue;
 
-                _pickedFromCardReward.Attempted(id);
-                if (cardChoice.wasPicked)
-                    _pickedFromCardReward.Succeeded(id);
+                _pickedFromCardReward.Record(id, cardChoice.wasPicked);
             }   
         }
     }
@@ -203,7 +211,7 @@ public class RunDataManager
     {
         foreach (var player in runHistory.Players)
         {
-            if (player.Id != 1 && player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
+            if (player.Id != LocalConstants.DefaultPlayerId && player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
                 continue;
             
             string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
@@ -233,6 +241,7 @@ public class RunDataManager
         }
         catch (Exception ex)
         {
+            Log.Error($"Error loading run history files: {ex.Message}");
             return;
         }
         
