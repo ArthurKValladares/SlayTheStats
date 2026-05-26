@@ -108,13 +108,8 @@ public class RunDataManager
             ModelId? cardId = card?.Id;
             if (cardId == null || cardId == ModelId.none || !alreadySeenCards.Add(cardId))
                 continue;
-
-            _wonWithCard.Attempted(cardId);
             
-            if (runHistory.Win)
-            {
-                _wonWithCard.Succeeded(cardId);
-            }
+            _wonWithCard.Record(cardId, runHistory.Win);
         }   
     }
     
@@ -130,12 +125,7 @@ public class RunDataManager
             if (relicId == null || relicId == ModelId.none || !alreadySeenRelics.Add(relicId))
                 continue;
             
-            _wonWithRelic.Attempted(relicId);
-
-            if (runHistory.Win)
-            {
-                _wonWithRelic.Succeeded(relicId);
-            }
+            _wonWithRelic.Record(relicId, runHistory.Win);
         }   
     }
     
