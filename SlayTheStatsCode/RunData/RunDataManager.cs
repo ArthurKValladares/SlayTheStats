@@ -1,6 +1,9 @@
-﻿using MegaCrit.Sts2.Core.Localization;
+﻿using System.Diagnostics;
+using System.Reflection.PortableExecutable;
+using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
+using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
@@ -52,6 +55,17 @@ file static class LocalConstants
     private readonly Dictionary<TK, int> _numSuccess = new();   
 }
 
+ public class MonsterEncounterData
+ {
+     public int turnsTaken { get; init; }
+     public int damageTaken { get; init; }
+     public int goldGained { get; init; }
+     public int goldStolen { get; init; }
+     public int maxHpLost { get; init; }
+     public int hpHealed { get; init; }
+     public int maxHpGained { get; init; }
+ }
+
 public class RunDataManager
 {
     private static RunDataManager? _instance;
@@ -62,6 +76,8 @@ public class RunDataManager
     private readonly SuccessRateTracker<ModelId> _pickedFromCardReward = new();
     private readonly SuccessRateTracker<ModelId> _boughtCardFromShop = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
+    
+    private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new();
     
     private static RunDataManager ConstructDefault()
     {
@@ -196,6 +212,52 @@ public class RunDataManager
             }
         }
     }
+
+    private void RecordMonsterEncouterData(RunHistory runHistory, ulong playerId)
+    {
+        // TODO: The filter should maybe be for monsters, elites, and bosses?
+        foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType == MapPointType.Monster))
+        {
+            if (entry.Rooms.Count == 0) continue;
+            
+            // NOTE: hard-coding this to always use the first room make the code a lot simpler,
+            // and for now every map point entry always has a single room so the behavior is always still correct 
+            MapPointRoomHistoryEntry room = entry.Rooms[0];
+            
+            int turnsTaken = room.TurnsTaken;
+            
+            int damageTaken = playerStat.DamageTaken;
+            int goldGained =  playerStat.GoldGained;
+            int goldStolen =  playerStat.GoldStolen;
+            int maxHpLost = playerStat.MaxHpLost;
+            int hpHealed = playerStat.HpHealed;
+            int maxHpGained = playerStat.MaxHpGained;
+            
+            var encounterData = new MonsterEncounterData
+            {
+                turnsTaken  = turnsTaken,
+                damageTaken = damageTaken,
+                goldGained  = goldGained,
+                goldStolen  = goldStolen,
+                maxHpLost   = maxHpLost,
+                hpHealed    = hpHealed,
+                maxHpGained = maxHpGained
+            };
+            
+            ModelId? roomId = room.ModelId;
+            if(roomId == null) continue;
+            List<ModelId> monstersId = room.MonsterIds;
+            
+            (ModelId, List<ModelId>) key = (roomId, monstersId);
+            
+            if (!_monsterEncounters.TryGetValue(key, out var values))
+            {
+                values = [];
+                _monsterEncounters[key] = values;
+            }
+            values.Add(encounterData);
+        }    
+    }
     
     public void AddRunToHistory(RunHistory runHistory)
     {
@@ -216,11 +278,15 @@ public class RunDataManager
             
             RecordShopCardPurchaseData(runHistory, player.Id);
             RecordShopRelicPurchaseData(runHistory, player.Id);
+            
+            RecordMonsterEncouterData(runHistory, player.Id);
         }
     }
     
     public void LoadAllRuns()
     {
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        
         SaveManager saveManager = SaveManager.Instance;
         List<string> runHistoryFileNames;
 
@@ -244,6 +310,9 @@ public class RunDataManager
             
             AddRunToHistory(readSaveResult.SaveData);
         }
+        
+        TimeSpan ts = stopwatch.Elapsed;
+        Log.Info($"Loaded {runHistoryFileNames.Count} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
     }
 
     public float GetCardWinPercentage(ModelId id)
