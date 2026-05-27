@@ -51,6 +51,20 @@ file static class LocalConstants
         return numSuccess / (float) numAttempts;
     }
     
+    public void Merge(SuccessRateTracker<TK> other)
+    {
+        foreach (var (key, count) in other._numAttempt)
+        {
+            _numAttempt.TryGetValue(key, out int existing);
+            _numAttempt[key] = existing + count;
+        }
+        foreach (var (key, count) in other._numSuccess)
+        {
+            _numSuccess.TryGetValue(key, out int existing);
+            _numSuccess[key] = existing + count;
+        }
+    }
+    
     private readonly Dictionary<TK, int> _numAttempt = new();
     private readonly Dictionary<TK, int> _numSuccess = new();   
 }
@@ -77,7 +91,7 @@ public class RunDataManager
     private readonly SuccessRateTracker<ModelId> _boughtCardFromShop = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
-    private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new();
+    private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
     
     private static RunDataManager ConstructDefault()
     {
@@ -283,6 +297,26 @@ public class RunDataManager
         }
     }
     
+    private void Merge(RunDataManager other)
+    {
+        _wonWithCard.Merge(other._wonWithCard);
+        _wonWithRelic.Merge(other._wonWithRelic);
+        _pickedAncientRelic.Merge(other._pickedAncientRelic);
+        _pickedFromCardReward.Merge(other._pickedFromCardReward);
+        _boughtCardFromShop.Merge(other._boughtCardFromShop);
+        _boughtRelicFromShop.Merge(other._boughtRelicFromShop);
+
+        foreach (var (key, encounters) in other._monsterEncounters)
+        {
+            if (!_monsterEncounters.TryGetValue(key, out var existing))
+            {
+                existing = [];
+                _monsterEncounters[key] = existing;
+            }
+            existing.AddRange(encounters);
+        }
+    }
+    
     public void LoadAllRuns()
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
@@ -311,8 +345,35 @@ public class RunDataManager
             AddRunToHistory(readSaveResult.SaveData);
         }
         
+        int loaded = 0;
+        object mergeLock = new object();
+
+        Parallel.ForEach(
+            runHistoryFileNames,
+            // each thread gets its own local instance
+            () => new RunDataManager(),
+            (name, _, localManager) =>
+            {
+                ReadSaveResult<RunHistory> result = SaveManager.Instance.LoadRunHistory(name);
+                if (result.Success && result.SaveData != null)
+                {
+                    localManager.AddRunToHistory(result.SaveData);
+                    Interlocked.Increment(ref loaded);
+                }
+                return localManager;
+            },
+            // called once per thread when it finishes
+            localManager =>
+            {
+                lock (mergeLock)
+                {
+                    Merge(localManager);
+                }
+            }
+        );
+        
         TimeSpan ts = stopwatch.Elapsed;
-        Log.Info($"Loaded {runHistoryFileNames.Count} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
+        Log.Info($"Loaded {loaded} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
     }
 
     public float GetCardWinPercentage(ModelId id)
@@ -345,5 +406,24 @@ public class RunDataManager
     public float GetRelicPurchasePercentage(ModelId id)
     {
         return _boughtRelicFromShop.SuccessRate(id);
+    }
+    
+    private sealed class EncounterKeyComparer : IEqualityComparer<(ModelId, List<ModelId>)>
+    {
+        public static readonly EncounterKeyComparer Instance = new();
+
+        public bool Equals((ModelId, List<ModelId>) x, (ModelId, List<ModelId>) y)
+        {
+            return x.Item1 == y.Item1 && x.Item2.SequenceEqual(y.Item2);
+        }
+
+        public int GetHashCode((ModelId, List<ModelId>) obj)
+        {
+            HashCode hash = new HashCode();
+            hash.Add(obj.Item1);
+            foreach (ModelId id in obj.Item2)
+                hash.Add(id);
+            return hash.ToHashCode();
+        }
     }
 }
