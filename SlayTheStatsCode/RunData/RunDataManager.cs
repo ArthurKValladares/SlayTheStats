@@ -143,6 +143,106 @@ public class PotionLifecycleTracker
     }
 }
 
+public class CardLifecycleTracker
+{
+    private readonly Dictionary<ModelId, int> _timesInDeck    = new();
+    private readonly Dictionary<ModelId, int> _timesRemoved   = new();
+    private readonly Dictionary<ModelId, int> _timesUpgraded  = new();
+
+    // Per-removal/upgrade: "how many removes/smiths had happened since obtaining the card"
+    private readonly Dictionary<ModelId, List<int>> _removePriorityDeltas  = new();
+    private readonly Dictionary<ModelId, List<int>> _upgradePriorityDeltas = new();
+
+    public void RecordInDeck(ModelId id) => Increment(_timesInDeck, id);
+
+    public void RecordRemoved(ModelId id, int priorityDelta)
+    {
+        Increment(_timesRemoved, id);
+        PushDelta(_removePriorityDeltas, id, priorityDelta);
+    }
+
+    public void RecordUpgraded(ModelId id, int priorityDelta)
+    {
+        Increment(_timesUpgraded, id);
+        PushDelta(_upgradePriorityDeltas, id, priorityDelta);
+    }
+
+    // Fraction of deck copies that were removed
+    public float RemovalRate(ModelId id)
+    {
+        int inDeck = _timesInDeck.GetValueOrDefault(id);
+        return inDeck == 0 ? 0f : _timesRemoved.GetValueOrDefault(id) / (float)inDeck;
+    }
+
+    // Fraction of deck copies that were upgraded at a rest site
+    public float UpgradeRate(ModelId id)
+    {
+        int inDeck = _timesInDeck.GetValueOrDefault(id);
+        return inDeck == 0 ? 0f : _timesUpgraded.GetValueOrDefault(id) / (float)inDeck;
+    }
+
+    // Average removes-since-obtained before this card was removed (lower = higher priority)
+    public float? AvgRemovePriority(ModelId id)
+    {
+        if (!_removePriorityDeltas.TryGetValue(id, out var list) || list.Count == 0) return null;
+        return (float)list.Average();
+    }
+
+    // Average smiths-since-obtained before this card was upgraded (lower = higher priority)
+    public float? AvgUpgradePriority(ModelId id)
+    {
+        if (!_upgradePriorityDeltas.TryGetValue(id, out var list) || list.Count == 0) return null;
+        return (float)list.Average();
+    }
+
+    public void Merge(CardLifecycleTracker other)
+    {
+        MergeDicts(_timesInDeck,   other._timesInDeck);
+        MergeDicts(_timesRemoved,  other._timesRemoved);
+        MergeDicts(_timesUpgraded, other._timesUpgraded);
+        MergeDeltas(_removePriorityDeltas,  other._removePriorityDeltas);
+        MergeDeltas(_upgradePriorityDeltas, other._upgradePriorityDeltas);
+    }
+
+    private static void Increment(Dictionary<ModelId, int> dict, ModelId key)
+    {
+        dict.TryGetValue(key, out int count);
+        dict[key] = count + 1;
+    }
+
+    private static void PushDelta(Dictionary<ModelId, List<int>> dict, ModelId key, int delta)
+    {
+        if (!dict.TryGetValue(key, out var list))
+        {
+            list = new List<int>();
+            dict[key] = list;
+        }
+        list.Add(delta);
+    }
+
+    private static void MergeDicts(Dictionary<ModelId, int> target, Dictionary<ModelId, int> source)
+    {
+        foreach (var (key, count) in source)
+        {
+            target.TryGetValue(key, out int existing);
+            target[key] = existing + count;
+        }
+    }
+
+    private static void MergeDeltas(Dictionary<ModelId, List<int>> target, Dictionary<ModelId, List<int>> source)
+    {
+        foreach (var (key, deltas) in source)
+        {
+            if (!target.TryGetValue(key, out var list))
+            {
+                list = new List<int>();
+                target[key] = list;
+            }
+            list.AddRange(deltas);
+        }
+    }
+}
+
  public class MonsterEncounterData
  {
      public int TurnsTaken { get; init; }
@@ -166,6 +266,7 @@ public class RunDataManager
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
     private readonly PotionLifecycleTracker _potionLifecycle = new();
+    private readonly CardLifecycleTracker _cardLifecycle = new();
     
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
     
@@ -298,8 +399,7 @@ public class RunDataManager
 
     private void RecordMonsterEncounterData(RunHistory runHistory, ulong playerId)
     {
-        // TODO: The filter should maybe be for monsters, elites, and bosses?
-        foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType == MapPointType.Monster))
+        foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType is MapPointType.Monster or MapPointType.Elite or MapPointType.Boss))
         {
             if (entry.Rooms.Count == 0) continue;
             
@@ -333,6 +433,72 @@ public class RunDataManager
         }    
     }
     
+    private void RecordCardLifecycleData(RunHistory runHistory, ulong playerId)
+    {
+        RunHistoryPlayer? player = runHistory.Players.FirstOrDefault(p => p.Id == playerId);
+        if (player == null) return;
+
+        // Count every copy that existed this run: final deck + anything removed mid-run.
+        // We count directly (not via a floor-keyed dict) so multiple starter cards sharing
+        // FloorAddedToDeck = 1 are each counted individually.
+        foreach (SerializableCard card in player.Deck)
+            if (card.Id != null)
+                _cardLifecycle.RecordInDeck(card.Id);
+
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+            foreach (SerializableCard removed in playerStat.CardsRemoved)
+                if (removed.Id != null)
+                    _cardLifecycle.RecordInDeck(removed.Id);
+
+        // Separate floor->id map used only for priority delta tracking.
+        // Collision on floor 1 is fine here: all starter copies were obtained at the same time,
+        // so obtainedAtRemoval[1] = 0 regardless of which copy we track.
+        var copyFloorToId = new Dictionary<int, ModelId>();
+        foreach (SerializableCard card in player.Deck)
+            if (card.Id != null && card.FloorAddedToDeck.HasValue)
+                copyFloorToId[card.FloorAddedToDeck.Value] = card.Id;
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+            foreach (SerializableCard removed in playerStat.CardsRemoved)
+                if (removed.Id != null && removed.FloorAddedToDeck.HasValue)
+                    copyFloorToId[removed.FloorAddedToDeck.Value] = removed.Id;
+
+        // Walk floors in order to build priority deltas.
+        // - obtainedAtRemoval: floorAddedToDeck -> removalCount when that copy was gained
+        // - firstObtainedAtSmith: cardId -> smithCount when first copy was gained
+        // Starter cards (not seen in CardsGained) default to obtained-at-0 for both.
+        var obtainedAtRemoval  = new Dictionary<int, int>();
+        var firstObtainedAtSmith = new Dictionary<ModelId, int>();
+        int removalCount = 0;
+        int smithCount   = 0;
+
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+        {
+            // Register newly gained cards before processing removals/upgrades on the same floor.
+            foreach (SerializableCard gained in playerStat.CardsGained)
+            {
+                if (gained.Id == null) continue;
+                if (gained.FloorAddedToDeck.HasValue)
+                    obtainedAtRemoval.TryAdd(gained.FloorAddedToDeck.Value, removalCount);
+                firstObtainedAtSmith.TryAdd(gained.Id, smithCount);
+            }
+
+            foreach (SerializableCard removed in playerStat.CardsRemoved)
+            {
+                if (removed.Id == null || !removed.FloorAddedToDeck.HasValue) continue;
+                int obtainedAt = obtainedAtRemoval.GetValueOrDefault(removed.FloorAddedToDeck.Value, 0);
+                _cardLifecycle.RecordRemoved(removed.Id, removalCount - obtainedAt);
+                removalCount++;
+            }
+
+            foreach (ModelId upgradedId in playerStat.UpgradedCards)
+            {
+                int obtainedAt = firstObtainedAtSmith.GetValueOrDefault(upgradedId, 0);
+                _cardLifecycle.RecordUpgraded(upgradedId, smithCount - obtainedAt);
+                smithCount++;
+            }
+        }
+    }
+
     private void RecordPotionLifecycleData(RunHistory runHistory, ulong playerId)
     {
         foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId))
@@ -388,8 +554,9 @@ public class RunDataManager
             RecordShopRelicPurchaseData(runHistory, player.Id);
             
             RecordMonsterEncounterData(runHistory, player.Id);
-            
+
             RecordPotionLifecycleData(runHistory, player.Id);
+            RecordCardLifecycleData(runHistory, player.Id);
         }
     }
     
@@ -414,6 +581,7 @@ public class RunDataManager
         }
         
         _potionLifecycle.Merge(other._potionLifecycle);
+        _cardLifecycle.Merge(other._cardLifecycle);
     }
     
     public void LoadAllRuns()
@@ -476,6 +644,11 @@ public class RunDataManager
     public float GetPotionShopBuyRate(ModelId id)    => _potionLifecycle.ShopBuyRate(id);
     public float GetPotionUseRate(ModelId id)        => _potionLifecycle.UseRate(id);
     public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
+
+    public float  GetCardRemovalRate(ModelId id)         => _cardLifecycle.RemovalRate(id);
+    public float  GetCardUpgradeRate(ModelId id)         => _cardLifecycle.UpgradeRate(id);
+    public float? GetCardAvgRemovePriority(ModelId id)   => _cardLifecycle.AvgRemovePriority(id);
+    public float? GetCardAvgUpgradePriority(ModelId id)  => _cardLifecycle.AvgUpgradePriority(id);
 
     public MonsterEncounterData? GetEncounterAverages(ModelId roomId, List<ModelId> monsterIds)
     {

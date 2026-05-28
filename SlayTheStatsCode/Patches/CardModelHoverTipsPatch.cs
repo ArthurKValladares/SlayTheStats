@@ -16,14 +16,26 @@ public static class CardModelHoverTipsPatch
         var tip = new HoverTip();
         object boxed = tip;
         
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Test");
-        
-        RunDataManager runDataManager = RunDataManager.Instance;
-        float winPercentage = runDataManager.GetCardWinPercentage(__instance.Id) * 100.0f;
-        float rewardPickPercentage = runDataManager.GetCardRewardPickPercentage(__instance.Id) * 100.0f;
-        float purchasePercentage = runDataManager.GetCardBuyPercentage(__instance.Id) * 100.0f;
-        
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Win Percentage {winPercentage}%\nCard Reward Pick Percentage {rewardPickPercentage}\nPurchase Percentage {purchasePercentage}%");
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
+
+        RunDataManager rdm = RunDataManager.Instance;
+        float winPct         = rdm.GetCardWinPercentage(__instance.Id)        * 100f;
+        float rewardPickPct  = rdm.GetCardRewardPickPercentage(__instance.Id) * 100f;
+        float purchasePct    = rdm.GetCardBuyPercentage(__instance.Id)        * 100f;
+        float removalPct     = rdm.GetCardRemovalRate(__instance.Id)          * 100f;
+        float upgradePct     = rdm.GetCardUpgradeRate(__instance.Id)          * 100f;
+        float? removePriority  = rdm.GetCardAvgRemovePriority(__instance.Id);
+        float? upgradePriority = rdm.GetCardAvgUpgradePriority(__instance.Id);
+
+        string removePriorityStr  = removePriority.HasValue  ? $"{removePriority.Value:F1}"  : "N/A";
+        string upgradePriorityStr = upgradePriority.HasValue ? $"{upgradePriority.Value:F1}" : "N/A";
+
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
+            $"Win Rate: {winPct:F1}%\n" +
+            $"Reward Pick Rate: {rewardPickPct:F1}%\n" +
+            $"Shop Buy Rate: {purchasePct:F1}%\n" +
+            $"Removal Rate: {removalPct:F1}% (avg priority: {removePriorityStr})\n" +
+            $"Upgrade Rate: {upgradePct:F1}% (avg priority: {upgradePriorityStr})");
 
         tip = (HoverTip)boxed;
         
