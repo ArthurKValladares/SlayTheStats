@@ -1,4 +1,6 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
+using System.Linq;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
@@ -474,7 +476,26 @@ public class RunDataManager
     public float GetPotionShopBuyRate(ModelId id)    => _potionLifecycle.ShopBuyRate(id);
     public float GetPotionUseRate(ModelId id)        => _potionLifecycle.UseRate(id);
     public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
-    
+
+    public MonsterEncounterData? GetEncounterAverages(ModelId roomId, List<ModelId> monsterIds)
+    {
+        var key = (roomId, monsterIds);
+        if (!_monsterEncounters.TryGetValue(key, out var entries) || entries.Count == 0)
+            return null;
+
+        float n = entries.Count;
+        return new MonsterEncounterData
+        {
+            TurnsTaken  = (int)Math.Round(entries.Average(e => e.TurnsTaken)),
+            DamageTaken = (int)Math.Round(entries.Average(e => e.DamageTaken)),
+            GoldGained  = (int)Math.Round(entries.Average(e => e.GoldGained)),
+            GoldStolen  = (int)Math.Round(entries.Average(e => e.GoldStolen)),
+            MaxHpLost   = (int)Math.Round(entries.Average(e => e.MaxHpLost)),
+            HpHealed    = (int)Math.Round(entries.Average(e => e.HpHealed)),
+            MaxHpGained = (int)Math.Round(entries.Average(e => e.MaxHpGained)),
+        };
+    }
+
     private sealed class EncounterKeyComparer : IEqualityComparer<(ModelId, List<ModelId>)>
     {
         public static readonly EncounterKeyComparer Instance = new();
