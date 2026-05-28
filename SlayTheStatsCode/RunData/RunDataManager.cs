@@ -82,7 +82,7 @@ file static class LocalConstants
 
 public class RunDataManager
 {
-    private static RunDataManager? _instance;
+    private static readonly Lazy<RunDataManager> _lazy = new(ConstructDefault);
     
     private readonly SuccessRateTracker<ModelId> _wonWithCard = new();
     private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
@@ -99,14 +99,7 @@ public class RunDataManager
         return runDataManager;
     }
 
-    public static RunDataManager Instance
-    {
-        get
-        {
-            RunDataManager._instance ??= RunDataManager.ConstructDefault();
-            return RunDataManager._instance;
-        }
-    }
+    public static RunDataManager Instance => _lazy.Value;
 
     private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
         RunHistory runHistory,
@@ -191,6 +184,7 @@ public class RunDataManager
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, 
                      e => e.MapPointType == MapPointType.Shop))
         {
+            // We are not double-counting here, cards bough do not appear in CardChoices, only in CardGained
             foreach (CardChoiceHistoryEntry cardOffered in playerStat.CardChoices)
             {
                 ModelId? id = cardOffered.Card.Id;
@@ -214,6 +208,7 @@ public class RunDataManager
     {
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType == MapPointType.Shop))
         {
+            // We are not double-counting here, relics bough do not appear in RelicChoices, only in BoughtRelics
             foreach (ModelChoiceHistoryEntry relicOffered in playerStat.RelicChoices)
             {
                 _boughtRelicFromShop.Attempted(relicOffered.choice);
@@ -262,7 +257,7 @@ public class RunDataManager
             if(roomId == null) continue;
             List<ModelId> monstersId = room.MonsterIds;
             
-            (ModelId, List<ModelId>) key = (roomId, monstersId);
+            (ModelId, List<ModelId>) key = (roomId, monstersId.ToList());
             
             if (!_monsterEncounters.TryGetValue(key, out var values))
             {
