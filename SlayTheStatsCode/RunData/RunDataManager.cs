@@ -69,41 +69,58 @@ file static class LocalConstants
 
 public class PotionLifecycleTracker
 {
-    private readonly Dictionary<ModelId, int> _timesOffered   = new();
-    private readonly Dictionary<ModelId, int> _timesPicked    = new();
+    // Non-shop (reward) offer/pick
+    private readonly Dictionary<ModelId, int> _timesOfferedReward = new();
+    private readonly Dictionary<ModelId, int> _timesPickedReward  = new();
+
+    // Shop offer/buy
+    private readonly Dictionary<ModelId, int> _timesOfferedShop   = new();
+    private readonly Dictionary<ModelId, int> _timesPickedShop    = new();
+
     private readonly Dictionary<ModelId, int> _timesUsed      = new();
     private readonly Dictionary<ModelId, int> _timesDiscarded = new();
 
-    public void RecordOffered(ModelId id)   => Increment(_timesOffered, id);
-    public void RecordPicked(ModelId id)    => Increment(_timesPicked, id);
-    public void RecordUsed(ModelId id)      => Increment(_timesUsed, id);
-    public void RecordDiscarded(ModelId id) => Increment(_timesDiscarded, id);
+    public void RecordOfferedReward(ModelId id) => Increment(_timesOfferedReward, id);
+    public void RecordPickedReward(ModelId id)  => Increment(_timesPickedReward, id);
+    public void RecordOfferedShop(ModelId id)   => Increment(_timesOfferedShop, id);
+    public void RecordPickedShop(ModelId id)    => Increment(_timesPickedShop, id);
+    public void RecordUsed(ModelId id)          => Increment(_timesUsed, id);
+    public void RecordDiscarded(ModelId id)     => Increment(_timesDiscarded, id);
 
-    // How often this potion is taken when offered
-    public float PickRate(ModelId id)
+    // How often this potion is taken when offered as a reward
+    public float RewardPickRate(ModelId id)
     {
-        int offered = _timesOffered.GetValueOrDefault(id);
-        return offered == 0 ? 0f : _timesPicked.GetValueOrDefault(id) / (float)offered;
+        int offered = _timesOfferedReward.GetValueOrDefault(id);
+        return offered == 0 ? 0f : _timesPickedReward.GetValueOrDefault(id) / (float)offered;
     }
 
-    // How often this potion is actually used after being picked up
+    // How often this potion is bought when available in the shop
+    public float ShopBuyRate(ModelId id)
+    {
+        int offered = _timesOfferedShop.GetValueOrDefault(id);
+        return offered == 0 ? 0f : _timesPickedShop.GetValueOrDefault(id) / (float)offered;
+    }
+
+    // How often this potion is actually used after being picked up (any source)
     public float UseRate(ModelId id)
     {
-        int picked = _timesPicked.GetValueOrDefault(id);
+        int picked = _timesPickedReward.GetValueOrDefault(id) + _timesPickedShop.GetValueOrDefault(id);
         return picked == 0 ? 0f : _timesUsed.GetValueOrDefault(id) / (float)picked;
     }
 
-    // How often this potion is thrown away after being picked up
+    // How often this potion is thrown away after being picked up (any source)
     public float DiscardRate(ModelId id)
     {
-        int picked = _timesPicked.GetValueOrDefault(id);
+        int picked = _timesPickedReward.GetValueOrDefault(id) + _timesPickedShop.GetValueOrDefault(id);
         return picked == 0 ? 0f : _timesDiscarded.GetValueOrDefault(id) / (float)picked;
     }
 
     public void Merge(PotionLifecycleTracker other)
     {
-        MergeDicts(_timesOffered,   other._timesOffered);
-        MergeDicts(_timesPicked,    other._timesPicked);
+        MergeDicts(_timesOfferedReward, other._timesOfferedReward);
+        MergeDicts(_timesPickedReward,  other._timesPickedReward);
+        MergeDicts(_timesOfferedShop,   other._timesOfferedShop);
+        MergeDicts(_timesPickedShop,    other._timesPickedShop);
         MergeDicts(_timesUsed,      other._timesUsed);
         MergeDicts(_timesDiscarded, other._timesDiscarded);
     }
@@ -316,13 +333,24 @@ public class RunDataManager
     
     private void RecordPotionLifecycleData(RunHistory runHistory, ulong playerId)
     {
-        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+        foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId))
         {
+            bool isShop = entry.MapPointType == MapPointType.Shop;
+
             foreach (ModelChoiceHistoryEntry potionChoice in playerStat.PotionChoices)
             {
-                _potionLifecycle.RecordOffered(potionChoice.choice);
-                if (potionChoice.wasPicked)
-                    _potionLifecycle.RecordPicked(potionChoice.choice);
+                if (isShop)
+                {
+                    _potionLifecycle.RecordOfferedShop(potionChoice.choice);
+                    if (potionChoice.wasPicked)
+                        _potionLifecycle.RecordPickedShop(potionChoice.choice);
+                }
+                else
+                {
+                    _potionLifecycle.RecordOfferedReward(potionChoice.choice);
+                    if (potionChoice.wasPicked)
+                        _potionLifecycle.RecordPickedReward(potionChoice.choice);
+                }
             }
 
             foreach (ModelId potionId in playerStat.PotionUsed)
@@ -332,7 +360,7 @@ public class RunDataManager
 
             foreach (ModelId potionId in playerStat.PotionDiscarded)
             {
-                _potionLifecycle.RecordDiscarded(potionId);   
+                _potionLifecycle.RecordDiscarded(potionId);
             }
         }
     }
@@ -442,9 +470,10 @@ public class RunDataManager
     public float GetCardRewardPickPercentage(ModelId id) => _pickedFromCardReward.SuccessRate(id);
     public float GetCardBuyPercentage(ModelId id) => _boughtCardFromShop.SuccessRate(id);
     public float GetRelicPurchasePercentage(ModelId id)=> _boughtRelicFromShop.SuccessRate(id);
-    public float GetPotionPickRate(ModelId id)    => _potionLifecycle.PickRate(id);
-    public float GetPotionUseRate(ModelId id)     => _potionLifecycle.UseRate(id);
-    public float GetPotionDiscardRate(ModelId id) => _potionLifecycle.DiscardRate(id);
+    public float GetPotionRewardPickRate(ModelId id) => _potionLifecycle.RewardPickRate(id);
+    public float GetPotionShopBuyRate(ModelId id)    => _potionLifecycle.ShopBuyRate(id);
+    public float GetPotionUseRate(ModelId id)        => _potionLifecycle.UseRate(id);
+    public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
     
     private sealed class EncounterKeyComparer : IEqualityComparer<(ModelId, List<ModelId>)>
     {
