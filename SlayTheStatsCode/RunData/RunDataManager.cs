@@ -67,6 +67,63 @@ file static class LocalConstants
     private readonly Dictionary<TK, int> _numSuccess = new();   
 }
 
+public class PotionLifecycleTracker
+{
+    private readonly Dictionary<ModelId, int> _timesOffered   = new();
+    private readonly Dictionary<ModelId, int> _timesPicked    = new();
+    private readonly Dictionary<ModelId, int> _timesUsed      = new();
+    private readonly Dictionary<ModelId, int> _timesDiscarded = new();
+
+    public void RecordOffered(ModelId id)   => Increment(_timesOffered, id);
+    public void RecordPicked(ModelId id)    => Increment(_timesPicked, id);
+    public void RecordUsed(ModelId id)      => Increment(_timesUsed, id);
+    public void RecordDiscarded(ModelId id) => Increment(_timesDiscarded, id);
+
+    // How often this potion is taken when offered
+    public float PickRate(ModelId id)
+    {
+        int offered = _timesOffered.GetValueOrDefault(id);
+        return offered == 0 ? 0f : _timesPicked.GetValueOrDefault(id) / (float)offered;
+    }
+
+    // How often this potion is actually used after being picked up
+    public float UseRate(ModelId id)
+    {
+        int picked = _timesPicked.GetValueOrDefault(id);
+        return picked == 0 ? 0f : _timesUsed.GetValueOrDefault(id) / (float)picked;
+    }
+
+    // How often this potion is thrown away after being picked up
+    public float DiscardRate(ModelId id)
+    {
+        int picked = _timesPicked.GetValueOrDefault(id);
+        return picked == 0 ? 0f : _timesDiscarded.GetValueOrDefault(id) / (float)picked;
+    }
+
+    public void Merge(PotionLifecycleTracker other)
+    {
+        MergeDicts(_timesOffered,   other._timesOffered);
+        MergeDicts(_timesPicked,    other._timesPicked);
+        MergeDicts(_timesUsed,      other._timesUsed);
+        MergeDicts(_timesDiscarded, other._timesDiscarded);
+    }
+
+    private static void Increment(Dictionary<ModelId, int> dict, ModelId key)
+    {
+        dict.TryGetValue(key, out int count);
+        dict[key] = count + 1;
+    }
+
+    private static void MergeDicts(Dictionary<ModelId, int> target, Dictionary<ModelId, int> source)
+    {
+        foreach (var (key, count) in source)
+        {
+            target.TryGetValue(key, out int existing);
+            target[key] = existing + count;
+        }
+    }
+}
+
  public class MonsterEncounterData
  {
      public int TurnsTaken { get; init; }
@@ -88,6 +145,8 @@ public class RunDataManager
     private readonly SuccessRateTracker<ModelId> _pickedFromCardReward = new();
     private readonly SuccessRateTracker<ModelId> _boughtCardFromShop = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
+    
+    private readonly PotionLifecycleTracker _potionLifecycle = new();
     
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
     
@@ -255,6 +314,29 @@ public class RunDataManager
         }    
     }
     
+    private void RecordPotionLifecycleData(RunHistory runHistory, ulong playerId)
+    {
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+        {
+            foreach (ModelChoiceHistoryEntry potionChoice in playerStat.PotionChoices)
+            {
+                _potionLifecycle.RecordOffered(potionChoice.choice);
+                if (potionChoice.wasPicked)
+                    _potionLifecycle.RecordPicked(potionChoice.choice);
+            }
+
+            foreach (ModelId potionId in playerStat.PotionUsed)
+            {
+                _potionLifecycle.RecordUsed(potionId);
+            }
+
+            foreach (ModelId potionId in playerStat.PotionDiscarded)
+            {
+                _potionLifecycle.RecordDiscarded(potionId);   
+            }
+        }
+    }
+    
     public void AddRunToHistory(RunHistory runHistory, ulong localPlayerId)
     {
         foreach (var player in runHistory.Players)
@@ -276,6 +358,8 @@ public class RunDataManager
             RecordShopRelicPurchaseData(runHistory, player.Id);
             
             RecordMonsterEncounterData(runHistory, player.Id);
+            
+            RecordPotionLifecycleData(runHistory, player.Id);
         }
     }
     
@@ -288,6 +372,7 @@ public class RunDataManager
         _boughtCardFromShop.Merge(other._boughtCardFromShop);
         _boughtRelicFromShop.Merge(other._boughtRelicFromShop);
 
+        // TODO: Custom structure for _monsterEncounters with its own merge function
         foreach (var (key, encounters) in other._monsterEncounters)
         {
             if (!_monsterEncounters.TryGetValue(key, out var existing))
@@ -297,6 +382,8 @@ public class RunDataManager
             }
             existing.AddRange(encounters);
         }
+        
+        _potionLifecycle.Merge(other._potionLifecycle);
     }
     
     public void LoadAllRuns()
@@ -349,37 +436,15 @@ public class RunDataManager
         Log.Info($"Loaded {loaded} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
     }
 
-    public float GetCardWinPercentage(ModelId id)
-    {
-        return _wonWithCard.SuccessRate(id);
-    }
-    
-    public float GetRelicWinPercentage(ModelId id)
-    {
-        return _wonWithRelic.SuccessRate(id);
-    }
-    
-    public float GetAncientPickPercentage(LocString title)
-    {
-        string key = title.LocEntryKey;
-        
-        return _pickedAncientRelic.SuccessRate(key);
-    }
-
-    public float GetCardRewardPickPercentage(ModelId id)
-    {
-        return _pickedFromCardReward.SuccessRate(id);
-    }
-    
-    public float GetCardBuyPercentage(ModelId id)
-    {
-        return _boughtCardFromShop.SuccessRate(id);
-    }
-    
-    public float GetRelicPurchasePercentage(ModelId id)
-    {
-        return _boughtRelicFromShop.SuccessRate(id);
-    }
+    public float GetCardWinPercentage(ModelId id) => _wonWithCard.SuccessRate(id);
+    public float GetRelicWinPercentage(ModelId id) => _wonWithRelic.SuccessRate(id);
+    public float GetAncientPickPercentage(LocString title) => _pickedAncientRelic.SuccessRate(title.LocEntryKey);
+    public float GetCardRewardPickPercentage(ModelId id) => _pickedFromCardReward.SuccessRate(id);
+    public float GetCardBuyPercentage(ModelId id) => _boughtCardFromShop.SuccessRate(id);
+    public float GetRelicPurchasePercentage(ModelId id)=> _boughtRelicFromShop.SuccessRate(id);
+    public float GetPotionPickRate(ModelId id)    => _potionLifecycle.PickRate(id);
+    public float GetPotionUseRate(ModelId id)     => _potionLifecycle.UseRate(id);
+    public float GetPotionDiscardRate(ModelId id) => _potionLifecycle.DiscardRate(id);
     
     private sealed class EncounterKeyComparer : IEqualityComparer<(ModelId, List<ModelId>)>
     {
