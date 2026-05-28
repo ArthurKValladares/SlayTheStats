@@ -218,7 +218,7 @@ public class RunDataManager
         }
     }
 
-    private void RecordMonsterEncouterData(RunHistory runHistory, ulong playerId)
+    private void RecordMonsterEncounterData(RunHistory runHistory, ulong playerId)
     {
         // TODO: The filter should maybe be for monsters, elites, and bosses?
         foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId, e => e.MapPointType == MapPointType.Monster))
@@ -229,24 +229,15 @@ public class RunDataManager
             // and for now every map point entry always has a single room so the behavior is always still correct 
             MapPointRoomHistoryEntry room = entry.Rooms[0];
             
-            int turnsTaken = room.TurnsTaken;
-            
-            int damageTaken = playerStat.DamageTaken;
-            int goldGained =  playerStat.GoldGained;
-            int goldStolen =  playerStat.GoldStolen;
-            int maxHpLost = playerStat.MaxHpLost;
-            int hpHealed = playerStat.HpHealed;
-            int maxHpGained = playerStat.MaxHpGained;
-            
             var encounterData = new MonsterEncounterData
             {
-                TurnsTaken  = turnsTaken,
-                DamageTaken = damageTaken,
-                GoldGained  = goldGained,
-                GoldStolen  = goldStolen,
-                MaxHpLost   = maxHpLost,
-                HpHealed    = hpHealed,
-                MaxHpGained = maxHpGained
+                TurnsTaken  = room.TurnsTaken,
+                DamageTaken = playerStat.DamageTaken,
+                GoldGained  = playerStat.GoldGained,
+                GoldStolen  = playerStat.GoldStolen,
+                MaxHpLost   = playerStat.MaxHpLost,
+                HpHealed    = playerStat.HpHealed,
+                MaxHpGained = playerStat.MaxHpGained
             };
             
             ModelId? roomId = room.ModelId;
@@ -284,7 +275,7 @@ public class RunDataManager
             RecordShopCardPurchaseData(runHistory, player.Id);
             RecordShopRelicPurchaseData(runHistory, player.Id);
             
-            RecordMonsterEncouterData(runHistory, player.Id);
+            RecordMonsterEncounterData(runHistory, player.Id);
         }
     }
     
@@ -318,11 +309,11 @@ public class RunDataManager
         try
         {
             runHistoryFileNames = saveManager.GetAllRunHistoryNames();
-            Log.Info($"Loaded {runHistoryFileNames.Count} run history files");
+            Log.Info($"Found {runHistoryFileNames.Count} run history files");
         }
         catch (Exception ex)
         {
-            Log.Error($"Error loading run history files: {ex.Message}");
+            Log.Error($"Error getting run history files: {ex.Message}");
             return;
         }
         
