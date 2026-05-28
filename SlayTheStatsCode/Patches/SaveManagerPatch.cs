@@ -1,4 +1,5 @@
 ﻿using HarmonyLib;
+using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
 using SlayTheStats.SlayTheStatsCode.RunData;
@@ -10,6 +11,7 @@ public static class SaveManagerPatch
 {
     public static void Postfix(RunHistory history)
     {
-        RunDataManager.Instance.AddRunToHistory(history);
+        ulong localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformType.Steam);
+        RunDataManager.Instance.AddRunToHistory(history, localPlayerId);
     }
 }

@@ -1,9 +1,7 @@
 ﻿using System.Diagnostics;
-using System.Reflection.PortableExecutable;
 using MegaCrit.Sts2.Core.Localization;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Map;
-using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Models;
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
@@ -71,18 +69,18 @@ file static class LocalConstants
 
  public class MonsterEncounterData
  {
-     public int turnsTaken { get; init; }
-     public int damageTaken { get; init; }
-     public int goldGained { get; init; }
-     public int goldStolen { get; init; }
-     public int maxHpLost { get; init; }
-     public int hpHealed { get; init; }
-     public int maxHpGained { get; init; }
+     public int TurnsTaken { get; init; }
+     public int DamageTaken { get; init; }
+     public int GoldGained { get; init; }
+     public int GoldStolen { get; init; }
+     public int MaxHpLost { get; init; }
+     public int HpHealed { get; init; }
+     public int MaxHpGained { get; init; }
  }
 
 public class RunDataManager
 {
-    private static readonly Lazy<RunDataManager> _lazy = new(ConstructDefault);
+    private static readonly Lazy<RunDataManager> Lazy = new(ConstructDefault);
     
     private readonly SuccessRateTracker<ModelId> _wonWithCard = new();
     private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
@@ -99,7 +97,7 @@ public class RunDataManager
         return runDataManager;
     }
 
-    public static RunDataManager Instance => _lazy.Value;
+    public static RunDataManager Instance => Lazy.Value;
 
     private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
         RunHistory runHistory,
@@ -122,13 +120,12 @@ public class RunDataManager
     
     private void RecordCardWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
-        IEnumerable<SerializableCard>? deck = player?.Deck;
-        if (deck == null) return;
+        IEnumerable<SerializableCard> deck = player.Deck;
         
         HashSet<ModelId> alreadySeenCards = new();
         foreach (SerializableCard card in deck)
         {
-            ModelId? cardId = card?.Id;
+            ModelId? cardId = card.Id;
             if (cardId == null || cardId == ModelId.none || !alreadySeenCards.Add(cardId))
                 continue;
             
@@ -138,13 +135,12 @@ public class RunDataManager
     
     private void RecordRelicWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
-        IEnumerable<SerializableRelic>? relics = player?.Relics;
-        if (relics == null) return;
+        IEnumerable<SerializableRelic> relics = player.Relics;
         
         HashSet<ModelId> alreadySeenRelics = new();
         foreach (SerializableRelic relic in relics)
         {
-            ModelId? relicId = relic?.Id;
+            ModelId? relicId = relic.Id;
             if (relicId == null || relicId == ModelId.none || !alreadySeenRelics.Add(relicId))
                 continue;
             
@@ -244,13 +240,13 @@ public class RunDataManager
             
             var encounterData = new MonsterEncounterData
             {
-                turnsTaken  = turnsTaken,
-                damageTaken = damageTaken,
-                goldGained  = goldGained,
-                goldStolen  = goldStolen,
-                maxHpLost   = maxHpLost,
-                hpHealed    = hpHealed,
-                maxHpGained = maxHpGained
+                TurnsTaken  = turnsTaken,
+                DamageTaken = damageTaken,
+                GoldGained  = goldGained,
+                GoldStolen  = goldStolen,
+                MaxHpLost   = maxHpLost,
+                HpHealed    = hpHealed,
+                MaxHpGained = maxHpGained
             };
             
             ModelId? roomId = room.ModelId;
@@ -268,11 +264,11 @@ public class RunDataManager
         }    
     }
     
-    public void AddRunToHistory(RunHistory runHistory)
+    public void AddRunToHistory(RunHistory runHistory, ulong localPlayerId)
     {
         foreach (var player in runHistory.Players)
         {
-            if (player.Id != LocalConstants.DefaultPlayerId && player.Id != PlatformUtil.GetLocalPlayerId(PlatformType.Steam))
+            if (player.Id != LocalConstants.DefaultPlayerId && player.Id != localPlayerId)
                 continue;
             
             string playerName = PlatformUtil.GetPlayerName(PlatformType.Steam, player.Id);
@@ -330,19 +326,10 @@ public class RunDataManager
             return;
         }
         
-        foreach (String name in runHistoryFileNames)
-        {
-            ReadSaveResult<RunHistory> readSaveResult = SaveManager.Instance.LoadRunHistory(name);
-            
-            if (!readSaveResult.Success || readSaveResult.SaveData == null)
-                continue;
-            
-            AddRunToHistory(readSaveResult.SaveData);
-        }
-        
         int loaded = 0;
         object mergeLock = new object();
 
+        ulong localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformType.Steam);
         Parallel.ForEach(
             runHistoryFileNames,
             // each thread gets its own local instance
@@ -352,7 +339,7 @@ public class RunDataManager
                 ReadSaveResult<RunHistory> result = SaveManager.Instance.LoadRunHistory(name);
                 if (result.Success && result.SaveData != null)
                 {
-                    localManager.AddRunToHistory(result.SaveData);
+                    localManager.AddRunToHistory(result.SaveData, localPlayerId);
                     Interlocked.Increment(ref loaded);
                 }
                 return localManager;
