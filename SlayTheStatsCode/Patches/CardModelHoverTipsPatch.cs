@@ -32,8 +32,10 @@ public static class CardModelHoverTipsPatch
         string removePriorityStr  = removePriority.HasValue  ? $"{removePriority.Value:F1}"  : "N/A";
         string upgradePriorityStr = upgradePriority.HasValue ? $"{upgradePriority.Value:F1}" : "N/A";
 
-        ModelId? topEnchant = rdm.GetMostCommonEnchantment(__instance.Id);
-        string enchantStr = topEnchant?.Entry ?? "None";
+        var topEnchant = rdm.GetMostCommonEnchantment(__instance.Id);
+        string enchantStr = topEnchant.HasValue
+            ? $"{topEnchant.Value.EnchantmentId.Entry} ({topEnchant.Value.Rate * 100f:F1}%)"
+            : "None";
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Win Rate: {winPct:F1}%\n" +

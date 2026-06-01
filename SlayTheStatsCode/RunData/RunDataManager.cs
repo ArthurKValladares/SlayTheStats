@@ -178,6 +178,10 @@ public class CardLifecycleTracker
         return inDeck == 0 ? 0f : _timesRemoved.GetValueOrDefault(key) / (float)inDeck;
     }
 
+    // Total copies of this card (any variant) seen across all runs
+    public int TotalInDeck(ModelId id) =>
+        _timesInDeck.Where(kvp => kvp.Key.CardId == id).Sum(kvp => kvp.Value);
+
     // Fraction of all copies (any variant) of this card that were upgraded at a rest site
     public float UpgradeRate(ModelId id)
     {
@@ -702,11 +706,18 @@ public class RunDataManager
     public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
     public float? GetCardAvgUpgradePriority(ModelId id)         => _cardLifecycle.AvgUpgradePriority(id);
 
-    public ModelId? GetMostCommonEnchantment(ModelId cardId)
+    public (ModelId EnchantmentId, float Rate)? GetMostCommonEnchantment(ModelId cardId)
     {
         if (!_enchantmentCounts.TryGetValue(cardId, out var enchantCounts) || enchantCounts.Count == 0)
             return null;
-        return enchantCounts.MaxBy(kvp => kvp.Value).Key;
+
+        var top = enchantCounts.MaxBy(kvp => kvp.Value);
+
+        // Denominator: total times this card was enchanted (any enchantment)
+        int totalEnchants = enchantCounts.Values.Sum();
+        float rate = totalEnchants == 0 ? 0f : top.Value / (float)totalEnchants;
+
+        return (top.Key, rate);
     }
 
     public MonsterEncounterData? GetEncounterAverages(ModelId roomId, List<ModelId> monsterIds)
