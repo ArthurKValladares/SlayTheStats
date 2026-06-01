@@ -21,14 +21,20 @@ public static class CreatureHoverTipsPatch
         MapPointRoomHistoryEntry room = history.Rooms[^1];
         if (room.ModelId == null) return;
 
-        var averages = RunDataManager.Instance.GetEncounterAverages(room.ModelId, room.MonsterIds);
+        RunDataManager rdm = RunDataManager.Instance;
+        var averages = rdm.GetEncounterAverages(room.ModelId, room.MonsterIds);
         if (averages == null) return;
+
+        float killRate = rdm.GetEncounterKillRate(room.ModelId, room.MonsterIds) * 100f;
+        int? lethalityRank = rdm.GetEncounterLethalityRank(room.ModelId, room.MonsterIds);
+        string lethalityStr = lethalityRank.HasValue ? $"#{lethalityRank.Value}" : "N/A";
 
         var tip = new HoverTip();
         object boxed = tip;
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Encounter Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
+            $"Kill Rate: {killRate:F1}% (lethality rank: {lethalityStr})\n" +
             $"Avg Turns: {averages.TurnsTaken}\n" +
             $"Avg Damage Taken: {averages.DamageTaken}\n" +
             $"Avg Gold Gained: {averages.GoldGained}\n" +

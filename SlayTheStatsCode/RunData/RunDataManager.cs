@@ -299,6 +299,8 @@ public class RunDataManager
     private readonly CardLifecycleTracker _cardLifecycle = new();
     
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterSeen  = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterKills = new(EncounterKeyComparer.Instance);
     
     private static RunDataManager ConstructDefault()
     {
@@ -444,16 +446,40 @@ public class RunDataManager
             ModelId? roomId = room.ModelId;
             if(roomId == null) continue;
             List<ModelId> monstersId = room.MonsterIds;
-            
+
             (ModelId, List<ModelId>) key = (roomId, monstersId.ToList());
-            
+
             if (!_monsterEncounters.TryGetValue(key, out var values))
             {
                 values = [];
                 _monsterEncounters[key] = values;
             }
             values.Add(encounterData);
-        }    
+
+            _encounterSeen.TryGetValue(key, out int seen);
+            _encounterSeen[key] = seen + 1;
+        }
+
+        // Record a kill for the encounter that ended the run, identified by matching room ModelId.
+        // Use the last matching entry in history (in case the same encounter type appears multiple times).
+        if (runHistory.KilledByEncounter != ModelId.none)
+        {
+            (ModelId, List<ModelId>)? killKey = null;
+            foreach (var (entry, _) in IterateMapHistory(runHistory, playerId,
+                         e => e.MapPointType is MapPointType.Monster or MapPointType.Elite or MapPointType.Boss))
+            {
+                if (entry.Rooms.Count == 0) continue;
+                MapPointRoomHistoryEntry room = entry.Rooms[0];
+                if (room.ModelId == runHistory.KilledByEncounter)
+                    killKey = (room.ModelId, room.MonsterIds.ToList());
+            }
+
+            if (killKey.HasValue)
+            {
+                _encounterKills.TryGetValue(killKey.Value, out int kills);
+                _encounterKills[killKey.Value] = kills + 1;
+            }
+        }
     }
     
     private void RecordCardLifecycleData(RunHistory runHistory, ulong playerId)
@@ -609,6 +635,17 @@ public class RunDataManager
         _boughtCardFromShop.Merge(other._boughtCardFromShop);
         _boughtRelicFromShop.Merge(other._boughtRelicFromShop);
 
+        foreach (var (key, count) in other._encounterSeen)
+        {
+            _encounterSeen.TryGetValue(key, out int existing);
+            _encounterSeen[key] = existing + count;
+        }
+        foreach (var (key, count) in other._encounterKills)
+        {
+            _encounterKills.TryGetValue(key, out int existing);
+            _encounterKills[key] = existing + count;
+        }
+
         // TODO: Custom structure for _monsterEncounters with its own merge function
         foreach (var (key, encounters) in other._monsterEncounters)
         {
@@ -718,6 +755,30 @@ public class RunDataManager
         float rate = totalEnchants == 0 ? 0f : top.Value / (float)totalEnchants;
 
         return (top.Key, rate);
+    }
+
+    public float GetEncounterKillRate(ModelId roomId, List<ModelId> monsterIds)
+    {
+        var key = (roomId, monsterIds);
+        int seen = _encounterSeen.GetValueOrDefault(key);
+        return seen == 0 ? 0f : _encounterKills.GetValueOrDefault(key) / (float)seen;
+    }
+
+    // 1 = most lethal. Returns null if this encounter has never been seen.
+    public int? GetEncounterLethalityRank(ModelId roomId, List<ModelId> monsterIds)
+    {
+        var key = (roomId, monsterIds);
+        if (!_encounterSeen.ContainsKey(key)) return null;
+
+        float myRate = GetEncounterKillRate(roomId, monsterIds);
+        int rank = 1;
+        foreach (var (otherKey, otherSeen) in _encounterSeen)
+        {
+            if (EncounterKeyComparer.Instance.Equals(otherKey, key)) continue;
+            float otherRate = otherSeen == 0 ? 0f : _encounterKills.GetValueOrDefault(otherKey) / (float)otherSeen;
+            if (otherRate > myRate) rank++;
+        }
+        return rank;
     }
 
     public MonsterEncounterData? GetEncounterAverages(ModelId roomId, List<ModelId> monsterIds)
