@@ -143,22 +143,26 @@ public class PotionLifecycleTracker
     }
 }
 
+/// <summary>Uniquely identifies a card variant: base, upgraded, enchanted, or upgraded+enchanted.</summary>
+public readonly record struct CardVariantKey(ModelId CardId, int UpgradeLevel, ModelId? EnchantmentId);
+
 public class CardLifecycleTracker
 {
-    private readonly Dictionary<ModelId, int> _timesInDeck    = new();
-    private readonly Dictionary<ModelId, int> _timesRemoved   = new();
-    private readonly Dictionary<ModelId, int> _timesUpgraded  = new();
+    // Keyed by variant — removal stats can distinguish base vs upgraded vs enchanted copies
+    private readonly Dictionary<CardVariantKey, int> _timesInDeck  = new();
+    private readonly Dictionary<CardVariantKey, int> _timesRemoved = new();
+    private readonly Dictionary<CardVariantKey, List<int>> _removePriorityDeltas = new();
 
-    // Per-removal/upgrade: "how many removes/smiths had happened since obtaining the card"
-    private readonly Dictionary<ModelId, List<int>> _removePriorityDeltas  = new();
+    // UpgradedCards only carries ModelId, so upgrade stats stay at card-id granularity
+    private readonly Dictionary<ModelId, int> _timesUpgraded = new();
     private readonly Dictionary<ModelId, List<int>> _upgradePriorityDeltas = new();
 
-    public void RecordInDeck(ModelId id) => Increment(_timesInDeck, id);
+    public void RecordInDeck(CardVariantKey key)  => IncrementV(_timesInDeck, key);
 
-    public void RecordRemoved(ModelId id, int priorityDelta)
+    public void RecordRemoved(CardVariantKey key, int priorityDelta)
     {
-        Increment(_timesRemoved, id);
-        PushDelta(_removePriorityDeltas, id, priorityDelta);
+        IncrementV(_timesRemoved, key);
+        PushDeltaV(_removePriorityDeltas, key, priorityDelta);
     }
 
     public void RecordUpgraded(ModelId id, int priorityDelta)
@@ -167,28 +171,26 @@ public class CardLifecycleTracker
         PushDelta(_upgradePriorityDeltas, id, priorityDelta);
     }
 
-    // Fraction of deck copies that were removed
-    public float RemovalRate(ModelId id)
+    // Fraction of copies of this variant that were removed
+    public float RemovalRate(CardVariantKey key)
     {
-        int inDeck = _timesInDeck.GetValueOrDefault(id);
-        return inDeck == 0 ? 0f : _timesRemoved.GetValueOrDefault(id) / (float)inDeck;
+        int inDeck = _timesInDeck.GetValueOrDefault(key);
+        return inDeck == 0 ? 0f : _timesRemoved.GetValueOrDefault(key) / (float)inDeck;
     }
 
-    // Fraction of deck copies that were upgraded at a rest site
+    // Fraction of all copies (any variant) of this card that were upgraded at a rest site
     public float UpgradeRate(ModelId id)
     {
-        int inDeck = _timesInDeck.GetValueOrDefault(id);
+        int inDeck = _timesInDeck.Where(kvp => kvp.Key.CardId == id).Sum(kvp => kvp.Value);
         return inDeck == 0 ? 0f : _timesUpgraded.GetValueOrDefault(id) / (float)inDeck;
     }
 
-    // Average removes-since-obtained before this card was removed (lower = higher priority)
-    public float? AvgRemovePriority(ModelId id)
+    public float? AvgRemovePriority(CardVariantKey key)
     {
-        if (!_removePriorityDeltas.TryGetValue(id, out var list) || list.Count == 0) return null;
+        if (!_removePriorityDeltas.TryGetValue(key, out var list) || list.Count == 0) return null;
         return (float)list.Average();
     }
 
-    // Average smiths-since-obtained before this card was upgraded (lower = higher priority)
     public float? AvgUpgradePriority(ModelId id)
     {
         if (!_upgradePriorityDeltas.TryGetValue(id, out var list) || list.Count == 0) return null;
@@ -197,11 +199,17 @@ public class CardLifecycleTracker
 
     public void Merge(CardLifecycleTracker other)
     {
-        MergeDicts(_timesInDeck,   other._timesInDeck);
-        MergeDicts(_timesRemoved,  other._timesRemoved);
+        MergeDictsV(_timesInDeck,  other._timesInDeck);
+        MergeDictsV(_timesRemoved, other._timesRemoved);
+        MergeDeltasV(_removePriorityDeltas, other._removePriorityDeltas);
         MergeDicts(_timesUpgraded, other._timesUpgraded);
-        MergeDeltas(_removePriorityDeltas,  other._removePriorityDeltas);
         MergeDeltas(_upgradePriorityDeltas, other._upgradePriorityDeltas);
+    }
+
+    private static void IncrementV(Dictionary<CardVariantKey, int> dict, CardVariantKey key)
+    {
+        dict.TryGetValue(key, out int count);
+        dict[key] = count + 1;
     }
 
     private static void Increment(Dictionary<ModelId, int> dict, ModelId key)
@@ -210,14 +218,25 @@ public class CardLifecycleTracker
         dict[key] = count + 1;
     }
 
+    private static void PushDeltaV(Dictionary<CardVariantKey, List<int>> dict, CardVariantKey key, int delta)
+    {
+        if (!dict.TryGetValue(key, out var list)) { list = new(); dict[key] = list; }
+        list.Add(delta);
+    }
+
     private static void PushDelta(Dictionary<ModelId, List<int>> dict, ModelId key, int delta)
     {
-        if (!dict.TryGetValue(key, out var list))
-        {
-            list = new List<int>();
-            dict[key] = list;
-        }
+        if (!dict.TryGetValue(key, out var list)) { list = new(); dict[key] = list; }
         list.Add(delta);
+    }
+
+    private static void MergeDictsV(Dictionary<CardVariantKey, int> target, Dictionary<CardVariantKey, int> source)
+    {
+        foreach (var (key, count) in source)
+        {
+            target.TryGetValue(key, out int existing);
+            target[key] = existing + count;
+        }
     }
 
     private static void MergeDicts(Dictionary<ModelId, int> target, Dictionary<ModelId, int> source)
@@ -229,15 +248,20 @@ public class CardLifecycleTracker
         }
     }
 
+    private static void MergeDeltasV(Dictionary<CardVariantKey, List<int>> target, Dictionary<CardVariantKey, List<int>> source)
+    {
+        foreach (var (key, deltas) in source)
+        {
+            if (!target.TryGetValue(key, out var list)) { list = new(); target[key] = list; }
+            list.AddRange(deltas);
+        }
+    }
+
     private static void MergeDeltas(Dictionary<ModelId, List<int>> target, Dictionary<ModelId, List<int>> source)
     {
         foreach (var (key, deltas) in source)
         {
-            if (!target.TryGetValue(key, out var list))
-            {
-                list = new List<int>();
-                target[key] = list;
-            }
+            if (!target.TryGetValue(key, out var list)) { list = new(); target[key] = list; }
             list.AddRange(deltas);
         }
     }
@@ -258,11 +282,13 @@ public class RunDataManager
 {
     private static readonly Lazy<RunDataManager> Lazy = new(ConstructDefault);
     
-    private readonly SuccessRateTracker<ModelId> _wonWithCard = new();
+    private readonly SuccessRateTracker<CardVariantKey> _wonWithCard = new();
     private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
     private readonly SuccessRateTracker<string> _pickedAncientRelic = new();
-    private readonly SuccessRateTracker<ModelId> _pickedFromCardReward = new();
-    private readonly SuccessRateTracker<ModelId> _boughtCardFromShop = new();
+    private readonly SuccessRateTracker<CardVariantKey> _pickedFromCardReward = new();
+    private readonly SuccessRateTracker<CardVariantKey> _boughtCardFromShop = new();
+    // enchantmentId → count, nested under cardId
+    private readonly Dictionary<ModelId, Dictionary<ModelId, int>> _enchantmentCounts = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
     private readonly PotionLifecycleTracker _potionLifecycle = new();
@@ -299,17 +325,15 @@ public class RunDataManager
     
     private void RecordCardWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
-        IEnumerable<SerializableCard> deck = player.Deck;
-        
-        HashSet<ModelId> alreadySeenCards = new();
-        foreach (SerializableCard card in deck)
+        // Record once per unique variant (base/upgraded/enchanted/upgraded+enchanted)
+        HashSet<CardVariantKey> seen = new();
+        foreach (SerializableCard card in player.Deck)
         {
-            ModelId? cardId = card.Id;
-            if (cardId == null || cardId == ModelId.none || !alreadySeenCards.Add(cardId))
-                continue;
-            
-            _wonWithCard.Record(cardId, runHistory.Win);
-        }   
+            if (card.Id == null || card.Id == ModelId.none) continue;
+            var key = VariantKey(card);
+            if (seen.Add(key))
+                _wonWithCard.Record(key, runHistory.Win);
+        }
     }
     
     private void RecordRelicWinData(RunHistory runHistory, RunHistoryPlayer player)
@@ -346,35 +370,30 @@ public class RunDataManager
         {
             foreach (CardChoiceHistoryEntry cardChoice in playerStat.CardChoices)
             {
-                ModelId? id = cardChoice.Card.Id;
-                if (id == null) continue;
-
-                _pickedFromCardReward.Record(id, cardChoice.wasPicked);
-            }   
+                if (cardChoice.Card.Id == null) continue;
+                _pickedFromCardReward.Record(VariantKey(cardChoice.Card), cardChoice.wasPicked);
+            }
         }
     }
-    
+
     public void RecordShopCardPurchaseData(RunHistory runHistory, ulong playerId)
     {
-        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId, 
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId,
                      e => e.MapPointType == MapPointType.Shop))
         {
-            // We are not double-counting here, cards bough do not appear in CardChoices, only in CardGained
+            // Cards bought do not appear in CardChoices, only in CardsGained
             foreach (CardChoiceHistoryEntry cardOffered in playerStat.CardChoices)
             {
-                ModelId? id = cardOffered.Card.Id;
-                if (id == null) continue;
-                    
-                _boughtCardFromShop.Attempted(id);
+                if (cardOffered.Card.Id == null) continue;
+                _boughtCardFromShop.Attempted(VariantKey(cardOffered.Card));
             }
-            
+
             foreach (SerializableCard cardBought in playerStat.CardsGained)
             {
-                ModelId? id = cardBought.Id;
-                if (id == null) continue;
-
-                _boughtCardFromShop.Attempted(id);
-                _boughtCardFromShop.Succeeded(id);
+                if (cardBought.Id == null) continue;
+                var key = VariantKey(cardBought);
+                _boughtCardFromShop.Attempted(key);
+                _boughtCardFromShop.Succeeded(key);
             }
         }
     }
@@ -439,35 +458,32 @@ public class RunDataManager
         if (player == null) return;
 
         // Count every copy that existed this run: final deck + anything removed mid-run.
-        // We count directly (not via a floor-keyed dict) so multiple starter cards sharing
-        // FloorAddedToDeck = 1 are each counted individually.
+        // Count directly (not via a floor-keyed dict) so multiple starter cards sharing
+        // FloorAddedToDeck = 1 are each counted individually as separate copies.
         foreach (SerializableCard card in player.Deck)
             if (card.Id != null)
-                _cardLifecycle.RecordInDeck(card.Id);
+                _cardLifecycle.RecordInDeck(VariantKey(card));
 
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
             foreach (SerializableCard removed in playerStat.CardsRemoved)
                 if (removed.Id != null)
-                    _cardLifecycle.RecordInDeck(removed.Id);
+                    _cardLifecycle.RecordInDeck(VariantKey(removed));
 
-        // Separate floor->id map used only for priority delta tracking.
-        // Collision on floor 1 is fine here: all starter copies were obtained at the same time,
-        // so obtainedAtRemoval[1] = 0 regardless of which copy we track.
-        var copyFloorToId = new Dictionary<int, ModelId>();
+        // Separate floor->variant map used only for priority delta tracking.
+        // Collision on floor 1 is fine: all starter copies were obtained at removal-count 0.
+        // Priority tracking: floor -> variant at time of gaining (for removal priority)
+        // Collision on floor 1 is fine — all starter copies were obtained at removal-count 0.
+        var copyFloorToVariant = new Dictionary<int, CardVariantKey>();
         foreach (SerializableCard card in player.Deck)
             if (card.Id != null && card.FloorAddedToDeck.HasValue)
-                copyFloorToId[card.FloorAddedToDeck.Value] = card.Id;
+                copyFloorToVariant[card.FloorAddedToDeck.Value] = VariantKey(card);
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
             foreach (SerializableCard removed in playerStat.CardsRemoved)
                 if (removed.Id != null && removed.FloorAddedToDeck.HasValue)
-                    copyFloorToId[removed.FloorAddedToDeck.Value] = removed.Id;
+                    copyFloorToVariant[removed.FloorAddedToDeck.Value] = VariantKey(removed);
 
-        // Walk floors in order to build priority deltas.
-        // - obtainedAtRemoval: floorAddedToDeck -> removalCount when that copy was gained
-        // - firstObtainedAtSmith: cardId -> smithCount when first copy was gained
-        // Starter cards (not seen in CardsGained) default to obtained-at-0 for both.
-        var obtainedAtRemoval  = new Dictionary<int, int>();
-        var firstObtainedAtSmith = new Dictionary<ModelId, int>();
+        var obtainedAtRemoval    = new Dictionary<int, int>();       // floorAdded -> removalCount when gained
+        var firstObtainedAtSmith = new Dictionary<ModelId, int>();   // cardId -> smithCount when first gained
         int removalCount = 0;
         int smithCount   = 0;
 
@@ -486,7 +502,7 @@ public class RunDataManager
             {
                 if (removed.Id == null || !removed.FloorAddedToDeck.HasValue) continue;
                 int obtainedAt = obtainedAtRemoval.GetValueOrDefault(removed.FloorAddedToDeck.Value, 0);
-                _cardLifecycle.RecordRemoved(removed.Id, removalCount - obtainedAt);
+                _cardLifecycle.RecordRemoved(VariantKey(removed), removalCount - obtainedAt);
                 removalCount++;
             }
 
@@ -495,6 +511,25 @@ public class RunDataManager
                 int obtainedAt = firstObtainedAtSmith.GetValueOrDefault(upgradedId, 0);
                 _cardLifecycle.RecordUpgraded(upgradedId, smithCount - obtainedAt);
                 smithCount++;
+            }
+        }
+    }
+
+    private void RecordCardEnchantmentData(RunHistory runHistory, ulong playerId)
+    {
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
+        {
+            foreach (CardEnchantmentHistoryEntry entry in playerStat.CardsEnchanted)
+            {
+                if (entry.Card.Id == null || entry.Enchantment == ModelId.none) continue;
+                ModelId cardId = entry.Card.Id;
+                if (!_enchantmentCounts.TryGetValue(cardId, out var enchantCounts))
+                {
+                    enchantCounts = new Dictionary<ModelId, int>();
+                    _enchantmentCounts[cardId] = enchantCounts;
+                }
+                enchantCounts.TryGetValue(entry.Enchantment, out int existing);
+                enchantCounts[entry.Enchantment] = existing + 1;
             }
         }
     }
@@ -557,6 +592,7 @@ public class RunDataManager
 
             RecordPotionLifecycleData(runHistory, player.Id);
             RecordCardLifecycleData(runHistory, player.Id);
+            RecordCardEnchantmentData(runHistory, player.Id);
         }
     }
     
@@ -582,6 +618,19 @@ public class RunDataManager
         
         _potionLifecycle.Merge(other._potionLifecycle);
         _cardLifecycle.Merge(other._cardLifecycle);
+        foreach (var (cardId, enchantCounts) in other._enchantmentCounts)
+        {
+            if (!_enchantmentCounts.TryGetValue(cardId, out var existing))
+            {
+                existing = new Dictionary<ModelId, int>();
+                _enchantmentCounts[cardId] = existing;
+            }
+            foreach (var (enchantId, count) in enchantCounts)
+            {
+                existing.TryGetValue(enchantId, out int e);
+                existing[enchantId] = e + count;
+            }
+        }
     }
     
     public void LoadAllRuns()
@@ -634,21 +683,31 @@ public class RunDataManager
         Log.Info($"Loaded {loaded} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
     }
 
-    public float GetCardWinPercentage(ModelId id) => _wonWithCard.SuccessRate(id);
-    public float GetRelicWinPercentage(ModelId id) => _wonWithRelic.SuccessRate(id);
-    public float GetAncientPickPercentage(LocString title) => _pickedAncientRelic.SuccessRate(title.LocEntryKey);
-    public float GetCardRewardPickPercentage(ModelId id) => _pickedFromCardReward.SuccessRate(id);
-    public float GetCardBuyPercentage(ModelId id) => _boughtCardFromShop.SuccessRate(id);
+    private static CardVariantKey VariantKey(SerializableCard card) =>
+        new(card.Id!, card.CurrentUpgradeLevel, card.Enchantment?.Id);
+
+    public float GetCardWinPercentage(CardVariantKey key)         => _wonWithCard.SuccessRate(key);
+    public float GetRelicWinPercentage(ModelId id)                => _wonWithRelic.SuccessRate(id);
+    public float GetAncientPickPercentage(LocString title)        => _pickedAncientRelic.SuccessRate(title.LocEntryKey);
+    public float GetCardRewardPickPercentage(CardVariantKey key)  => _pickedFromCardReward.SuccessRate(key);
+    public float GetCardBuyPercentage(CardVariantKey key)         => _boughtCardFromShop.SuccessRate(key);
     public float GetRelicPurchasePercentage(ModelId id)=> _boughtRelicFromShop.SuccessRate(id);
     public float GetPotionRewardPickRate(ModelId id) => _potionLifecycle.RewardPickRate(id);
     public float GetPotionShopBuyRate(ModelId id)    => _potionLifecycle.ShopBuyRate(id);
     public float GetPotionUseRate(ModelId id)        => _potionLifecycle.UseRate(id);
     public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
 
-    public float  GetCardRemovalRate(ModelId id)         => _cardLifecycle.RemovalRate(id);
-    public float  GetCardUpgradeRate(ModelId id)         => _cardLifecycle.UpgradeRate(id);
-    public float? GetCardAvgRemovePriority(ModelId id)   => _cardLifecycle.AvgRemovePriority(id);
-    public float? GetCardAvgUpgradePriority(ModelId id)  => _cardLifecycle.AvgUpgradePriority(id);
+    public float  GetCardRemovalRate(CardVariantKey key)        => _cardLifecycle.RemovalRate(key);
+    public float  GetCardUpgradeRate(ModelId id)                => _cardLifecycle.UpgradeRate(id);
+    public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
+    public float? GetCardAvgUpgradePriority(ModelId id)         => _cardLifecycle.AvgUpgradePriority(id);
+
+    public ModelId? GetMostCommonEnchantment(ModelId cardId)
+    {
+        if (!_enchantmentCounts.TryGetValue(cardId, out var enchantCounts) || enchantCounts.Count == 0)
+            return null;
+        return enchantCounts.MaxBy(kvp => kvp.Value).Key;
+    }
 
     public MonsterEncounterData? GetEncounterAverages(ModelId roomId, List<ModelId> monsterIds)
     {
