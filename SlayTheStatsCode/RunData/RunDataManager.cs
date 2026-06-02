@@ -295,6 +295,8 @@ public class RunDataManager
     private readonly Dictionary<ModelId, Dictionary<ModelId, int>> _enchantmentCounts = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
+    private readonly Dictionary<string, int> _restSiteChoiceCounts = new();
+    private int _restSiteVisits;
     private readonly PotionLifecycleTracker _potionLifecycle = new();
     private readonly CardLifecycleTracker _cardLifecycle = new();
     
@@ -564,6 +566,20 @@ public class RunDataManager
         }
     }
 
+    private void RecordRestSiteChoiceData(RunHistory runHistory, ulong playerId)
+    {
+        foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId,
+                     e => e.MapPointType == MapPointType.RestSite))
+        {
+            _restSiteVisits++;
+            foreach (string choiceId in playerStat.RestSiteChoices)
+            {
+                _restSiteChoiceCounts.TryGetValue(choiceId, out int count);
+                _restSiteChoiceCounts[choiceId] = count + 1;
+            }
+        }
+    }
+
     private void RecordPotionLifecycleData(RunHistory runHistory, ulong playerId)
     {
         foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId))
@@ -620,6 +636,7 @@ public class RunDataManager
             
             RecordMonsterEncounterData(runHistory, player.Id);
 
+            RecordRestSiteChoiceData(runHistory, player.Id);
             RecordPotionLifecycleData(runHistory, player.Id);
             RecordCardLifecycleData(runHistory, player.Id);
             RecordCardEnchantmentData(runHistory, player.Id);
@@ -657,6 +674,12 @@ public class RunDataManager
             existing.AddRange(encounters);
         }
         
+        _restSiteVisits += other._restSiteVisits;
+        foreach (var (key, count) in other._restSiteChoiceCounts)
+        {
+            _restSiteChoiceCounts.TryGetValue(key, out int existing);
+            _restSiteChoiceCounts[key] = existing + count;
+        }
         _potionLifecycle.Merge(other._potionLifecycle);
         _cardLifecycle.Merge(other._cardLifecycle);
         foreach (var (cardId, enchantCounts) in other._enchantmentCounts)
@@ -742,6 +765,14 @@ public class RunDataManager
     public float  GetCardUpgradeRate(ModelId id)                => _cardLifecycle.UpgradeRate(id);
     public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
     public float? GetCardAvgUpgradePriority(ModelId id)         => _cardLifecycle.AvgUpgradePriority(id);
+
+    // Fraction of campfire visits where this option was chosen (e.g. "HEAL", "SMITH")
+    public float GetRestSiteChoiceRate(string optionId)
+    {
+        if (_restSiteVisits == 0) return 0f;
+        _restSiteChoiceCounts.TryGetValue(optionId, out int count);
+        return count / (float)_restSiteVisits;
+    }
 
     public (ModelId EnchantmentId, float Rate)? GetMostCommonEnchantment(ModelId cardId)
     {
