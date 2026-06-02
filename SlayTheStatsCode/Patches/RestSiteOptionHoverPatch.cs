@@ -29,13 +29,17 @@ public static class RestSiteOptionHoverPatch
         var button = NRestSiteRoom.Instance?.GetButtonForOption(option);
         if (button == null) return;
 
-        float choiceRate = RunDataManager.Instance.GetRestSiteChoiceRate(option.OptionId) * 100f;
+        RunDataManager rdm = RunDataManager.Instance;
+        float choiceRate = rdm.GetRestSiteChoiceRate(option.OptionId) * 100f;
+        float? avgHp     = rdm.GetRestSiteChoiceAvgHp(option.OptionId);
+        string avgHpStr  = avgHp.HasValue ? $"{avgHp.Value:F1}" : "N/A";
 
         var tip = new HoverTip();
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
-            $"Chosen {choiceRate:F1}% of campfire visits");
+            $"Chosen {choiceRate:F1}% of campfire visits\n" +
+            $"Avg HP when chosen: {avgHpStr}");
         tip = (HoverTip)boxed;
 
         var tipSet = NHoverTipSet.CreateAndShow(button, tip);

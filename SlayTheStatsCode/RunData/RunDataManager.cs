@@ -295,7 +295,8 @@ public class RunDataManager
     private readonly Dictionary<ModelId, Dictionary<ModelId, int>> _enchantmentCounts = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
-    private readonly Dictionary<string, int> _restSiteChoiceCounts = new();
+    private readonly Dictionary<string, int> _restSiteChoiceCounts  = new();
+    private readonly Dictionary<string, int> _restSiteChoiceHpSums  = new(); // sum of current hp at time of choice
     private int _restSiteVisits;
     private readonly PotionLifecycleTracker _potionLifecycle = new();
     private readonly CardLifecycleTracker _cardLifecycle = new();
@@ -574,10 +575,17 @@ public class RunDataManager
             _restSiteVisits++;
             foreach (string choiceId in playerStat.RestSiteChoices)
             {
-                _restSiteChoiceCounts.TryGetValue(choiceId, out int count);
-                _restSiteChoiceCounts[choiceId] = count + 1;
+                Increment(_restSiteChoiceCounts, choiceId);
+                _restSiteChoiceHpSums.TryGetValue(choiceId, out int hpSum);
+                _restSiteChoiceHpSums[choiceId] = hpSum + playerStat.CurrentHp;
             }
         }
+    }
+
+    private static void Increment(Dictionary<string, int> dict, string key)
+    {
+        dict.TryGetValue(key, out int count);
+        dict[key] = count + 1;
     }
 
     private void RecordPotionLifecycleData(RunHistory runHistory, ulong playerId)
@@ -675,11 +683,8 @@ public class RunDataManager
         }
         
         _restSiteVisits += other._restSiteVisits;
-        foreach (var (key, count) in other._restSiteChoiceCounts)
-        {
-            _restSiteChoiceCounts.TryGetValue(key, out int existing);
-            _restSiteChoiceCounts[key] = existing + count;
-        }
+        MergeStringDicts(_restSiteChoiceCounts, other._restSiteChoiceCounts);
+        MergeStringDicts(_restSiteChoiceHpSums, other._restSiteChoiceHpSums);
         _potionLifecycle.Merge(other._potionLifecycle);
         _cardLifecycle.Merge(other._cardLifecycle);
         foreach (var (cardId, enchantCounts) in other._enchantmentCounts)
@@ -772,6 +777,24 @@ public class RunDataManager
         if (_restSiteVisits == 0) return 0f;
         _restSiteChoiceCounts.TryGetValue(optionId, out int count);
         return count / (float)_restSiteVisits;
+    }
+
+    // Average current HP of the player when they made this choice
+    public float? GetRestSiteChoiceAvgHp(string optionId)
+    {
+        _restSiteChoiceCounts.TryGetValue(optionId, out int count);
+        if (count == 0) return null;
+        _restSiteChoiceHpSums.TryGetValue(optionId, out int hpSum);
+        return hpSum / (float)count;
+    }
+
+    private static void MergeStringDicts(Dictionary<string, int> target, Dictionary<string, int> source)
+    {
+        foreach (var (key, count) in source)
+        {
+            target.TryGetValue(key, out int existing);
+            target[key] = existing + count;
+        }
     }
 
     public (ModelId EnchantmentId, float Rate)? GetMostCommonEnchantment(ModelId cardId)
