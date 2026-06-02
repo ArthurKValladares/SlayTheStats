@@ -153,11 +153,24 @@ public class CardLifecycleTracker
     private readonly Dictionary<CardVariantKey, int> _timesRemoved = new();
     private readonly Dictionary<CardVariantKey, List<int>> _removePriorityDeltas = new();
 
+    // Floor tracking — only counts entries where FloorAddedToDeck was present
+    private readonly Dictionary<CardVariantKey, int> _floorAddedSums   = new();
+    private readonly Dictionary<CardVariantKey, int> _floorAddedCounts = new();
+
     // UpgradedCards only carries ModelId, so upgrade stats stay at card-id granularity
     private readonly Dictionary<ModelId, int> _timesUpgraded = new();
     private readonly Dictionary<ModelId, List<int>> _upgradePriorityDeltas = new();
 
-    public void RecordInDeck(CardVariantKey key)  => IncrementV(_timesInDeck, key);
+    public void RecordInDeck(CardVariantKey key, int? floor = null)
+    {
+        IncrementV(_timesInDeck, key);
+        if (floor.HasValue)
+        {
+            _floorAddedSums.TryGetValue(key, out int sum);
+            _floorAddedSums[key] = sum + floor.Value;
+            IncrementV(_floorAddedCounts, key);
+        }
+    }
 
     public void RecordRemoved(CardVariantKey key, int priorityDelta)
     {
@@ -176,6 +189,12 @@ public class CardLifecycleTracker
     {
         int inDeck = _timesInDeck.GetValueOrDefault(key);
         return inDeck == 0 ? 0f : _timesRemoved.GetValueOrDefault(key) / (float)inDeck;
+    }
+
+    public float? AvgFloorAdded(CardVariantKey key)
+    {
+        if (!_floorAddedCounts.TryGetValue(key, out int count) || count == 0) return null;
+        return _floorAddedSums[key] / (float)count;
     }
 
     // Total copies of this card (any variant) seen across all runs
@@ -203,7 +222,9 @@ public class CardLifecycleTracker
 
     public void Merge(CardLifecycleTracker other)
     {
-        MergeDictsV(_timesInDeck,  other._timesInDeck);
+        MergeDictsV(_timesInDeck,      other._timesInDeck);
+        MergeDictsV(_floorAddedSums,   other._floorAddedSums);
+        MergeDictsV(_floorAddedCounts, other._floorAddedCounts);
         MergeDictsV(_timesRemoved, other._timesRemoved);
         MergeDeltasV(_removePriorityDeltas, other._removePriorityDeltas);
         MergeDicts(_timesUpgraded, other._timesUpgraded);
@@ -495,12 +516,12 @@ public class RunDataManager
         // FloorAddedToDeck = 1 are each counted individually as separate copies.
         foreach (SerializableCard card in player.Deck)
             if (card.Id != null)
-                _cardLifecycle.RecordInDeck(VariantKey(card));
+                _cardLifecycle.RecordInDeck(VariantKey(card), card.FloorAddedToDeck);
 
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
             foreach (SerializableCard removed in playerStat.CardsRemoved)
                 if (removed.Id != null)
-                    _cardLifecycle.RecordInDeck(VariantKey(removed));
+                    _cardLifecycle.RecordInDeck(VariantKey(removed), removed.FloorAddedToDeck);
 
         // Separate floor->variant map used only for priority delta tracking.
         // Collision on floor 1 is fine: all starter copies were obtained at removal-count 0.
@@ -766,6 +787,7 @@ public class RunDataManager
     public float GetPotionUseRate(ModelId id)        => _potionLifecycle.UseRate(id);
     public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
 
+    public float? GetCardAvgFloorAdded(CardVariantKey key)      => _cardLifecycle.AvgFloorAdded(key);
     public float  GetCardRemovalRate(CardVariantKey key)        => _cardLifecycle.RemovalRate(key);
     public float  GetCardUpgradeRate(ModelId id)                => _cardLifecycle.UpgradeRate(id);
     public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
