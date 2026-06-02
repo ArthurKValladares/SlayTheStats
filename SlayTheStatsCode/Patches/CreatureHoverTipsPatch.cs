@@ -35,6 +35,7 @@ public static class CreatureHoverTipsPatch
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Encounter Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Kill Rate: {killRate:F1}% (lethality rank: {lethalityStr})\n" +
+            $"Avg Entry HP: {averages.EntryHp}\n" +
             $"Avg Turns: {averages.TurnsTaken}\n" +
             $"Avg Damage Taken: {averages.DamageTaken}\n" +
             $"Avg Gold Gained: {averages.GoldGained}\n" +

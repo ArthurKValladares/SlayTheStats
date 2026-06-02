@@ -17,14 +17,20 @@ public static class RelicModelHoverTipsPatch
         // Construct HoverTip
         var tip = new HoverTip();
         object boxed = tip;
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Test");
-        
-        RunDataManager runDataManager = RunDataManager.Instance;
-        float winPercentage = runDataManager.GetRelicWinPercentage(__instance.Id) * 100.0f;
-        float ancientPickPercentage = runDataManager.GetAncientPickPercentage(__instance.Title) * 100.0f;
-        float purchasePercentage = runDataManager.GetRelicPurchasePercentage(__instance.Id) * 100.0f;
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
 
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Win Percentage {winPercentage}%\nAncient Pick Percentage {ancientPickPercentage}\nPurchase Percentage {purchasePercentage}%");
+        RunDataManager rdm = RunDataManager.Instance;
+        float winPct         = rdm.GetRelicWinPercentage(__instance.Id)          * 100f;
+        float ancientPickPct = rdm.GetAncientPickPercentage(__instance.Title)    * 100f;
+        float purchasePct    = rdm.GetRelicPurchasePercentage(__instance.Id)     * 100f;
+        float? avgFloor      = rdm.GetRelicAvgFloor(__instance.Id);
+        string avgFloorStr   = avgFloor.HasValue ? $"{avgFloor.Value:F1}" : "N/A";
+
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
+            $"Avg Floor Acquired: {avgFloorStr}\n" +
+            $"Win Rate: {winPct:F1}%\n" +
+            $"Ancient Pick Rate: {ancientPickPct:F1}%\n" +
+            $"Shop Buy Rate: {purchasePct:F1}%");
 
         tip = (HoverTip)boxed;
         

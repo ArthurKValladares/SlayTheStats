@@ -157,6 +157,10 @@ public class CardLifecycleTracker
     private readonly Dictionary<CardVariantKey, int> _floorAddedSums   = new();
     private readonly Dictionary<CardVariantKey, int> _floorAddedCounts = new();
 
+    // Deck size at time of picking
+    private readonly Dictionary<CardVariantKey, int> _deckSizeAtPickSums   = new();
+    private readonly Dictionary<CardVariantKey, int> _deckSizeAtPickCounts = new();
+
     // UpgradedCards only carries ModelId, so upgrade stats stay at card-id granularity
     private readonly Dictionary<ModelId, int> _timesUpgraded = new();
     private readonly Dictionary<ModelId, List<int>> _upgradePriorityDeltas = new();
@@ -197,6 +201,19 @@ public class CardLifecycleTracker
         return _floorAddedSums[key] / (float)count;
     }
 
+    public void RecordPickedAtDeckSize(CardVariantKey key, int deckSize)
+    {
+        _deckSizeAtPickSums.TryGetValue(key, out int sum);
+        _deckSizeAtPickSums[key] = sum + deckSize;
+        IncrementV(_deckSizeAtPickCounts, key);
+    }
+
+    public float? AvgDeckSizeAtPick(CardVariantKey key)
+    {
+        if (!_deckSizeAtPickCounts.TryGetValue(key, out int count) || count == 0) return null;
+        return _deckSizeAtPickSums[key] / (float)count;
+    }
+
     // Total copies of this card (any variant) seen across all runs
     public int TotalInDeck(ModelId id) =>
         _timesInDeck.Where(kvp => kvp.Key.CardId == id).Sum(kvp => kvp.Value);
@@ -222,9 +239,11 @@ public class CardLifecycleTracker
 
     public void Merge(CardLifecycleTracker other)
     {
-        MergeDictsV(_timesInDeck,      other._timesInDeck);
-        MergeDictsV(_floorAddedSums,   other._floorAddedSums);
-        MergeDictsV(_floorAddedCounts, other._floorAddedCounts);
+        MergeDictsV(_timesInDeck,          other._timesInDeck);
+        MergeDictsV(_floorAddedSums,       other._floorAddedSums);
+        MergeDictsV(_floorAddedCounts,     other._floorAddedCounts);
+        MergeDictsV(_deckSizeAtPickSums,   other._deckSizeAtPickSums);
+        MergeDictsV(_deckSizeAtPickCounts, other._deckSizeAtPickCounts);
         MergeDictsV(_timesRemoved, other._timesRemoved);
         MergeDeltasV(_removePriorityDeltas, other._removePriorityDeltas);
         MergeDicts(_timesUpgraded, other._timesUpgraded);
@@ -294,6 +313,7 @@ public class CardLifecycleTracker
 
  public class MonsterEncounterData
  {
+     public int EntryHp { get; init; }
      public int TurnsTaken { get; init; }
      public int DamageTaken { get; init; }
      public int GoldGained { get; init; }
@@ -322,6 +342,9 @@ public class RunDataManager
     private readonly PotionLifecycleTracker _potionLifecycle = new();
     private readonly CardLifecycleTracker _cardLifecycle = new();
     
+    private readonly Dictionary<ModelId, int> _relicFloorSums   = new();
+    private readonly Dictionary<ModelId, int> _relicFloorCounts = new();
+
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
     private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterSeen  = new(EncounterKeyComparer.Instance);
     private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterKills = new(EncounterKeyComparer.Instance);
@@ -368,17 +391,22 @@ public class RunDataManager
     
     private void RecordRelicWinData(RunHistory runHistory, RunHistoryPlayer player)
     {
-        IEnumerable<SerializableRelic> relics = player.Relics;
-        
         HashSet<ModelId> alreadySeenRelics = new();
-        foreach (SerializableRelic relic in relics)
+        foreach (SerializableRelic relic in player.Relics)
         {
             ModelId? relicId = relic.Id;
             if (relicId == null || relicId == ModelId.none || !alreadySeenRelics.Add(relicId))
                 continue;
-            
+
             _wonWithRelic.Record(relicId, runHistory.Win);
-        }   
+
+            if (relic.FloorAddedToDeck.HasValue)
+            {
+                _relicFloorSums.TryGetValue(relicId, out int sum);
+                _relicFloorSums[relicId] = sum + relic.FloorAddedToDeck.Value;
+                Increment(_relicFloorCounts, relicId);
+            }
+        }
     }
     
     private void RecordAncientPickData(RunHistory runHistory, ulong playerId)
@@ -458,6 +486,7 @@ public class RunDataManager
             
             var encounterData = new MonsterEncounterData
             {
+                EntryHp     = playerStat.CurrentHp + playerStat.DamageTaken, // HP before combat = end HP + damage taken
                 TurnsTaken  = room.TurnsTaken,
                 DamageTaken = playerStat.DamageTaken,
                 GoldGained  = playerStat.GoldGained,
@@ -541,8 +570,24 @@ public class RunDataManager
         int removalCount = 0;
         int smithCount   = 0;
 
+        // Compute initial deck size: total copies ever in the run minus those gained mid-run.
+        int totalGainedDuringRun = 0;
+        foreach (var (_, ps) in IterateMapHistory(runHistory, playerId))
+            totalGainedDuringRun += ps.CardsGained.Count;
+        int totalRemoved = 0;
+        foreach (var (_, ps) in IterateMapHistory(runHistory, playerId))
+            totalRemoved += ps.CardsRemoved.Count;
+        int deckSize = player.Deck.Count() + totalRemoved - totalGainedDuringRun;
+
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId))
         {
+            // Record deck size at time of pick (before this floor's cards are added).
+            foreach (CardChoiceHistoryEntry choice in playerStat.CardChoices)
+            {
+                if (choice.wasPicked && choice.Card.Id != null)
+                    _cardLifecycle.RecordPickedAtDeckSize(VariantKey(choice.Card), deckSize);
+            }
+
             // Register newly gained cards before processing removals/upgrades on the same floor.
             foreach (SerializableCard gained in playerStat.CardsGained)
             {
@@ -550,6 +595,7 @@ public class RunDataManager
                 if (gained.FloorAddedToDeck.HasValue)
                     obtainedAtRemoval.TryAdd(gained.FloorAddedToDeck.Value, removalCount);
                 firstObtainedAtSmith.TryAdd(gained.Id, smithCount);
+                deckSize++;
             }
 
             foreach (SerializableCard removed in playerStat.CardsRemoved)
@@ -558,6 +604,7 @@ public class RunDataManager
                 int obtainedAt = obtainedAtRemoval.GetValueOrDefault(removed.FloorAddedToDeck.Value, 0);
                 _cardLifecycle.RecordRemoved(VariantKey(removed), removalCount - obtainedAt);
                 removalCount++;
+                deckSize--;
             }
 
             foreach (ModelId upgradedId in playerStat.UpgradedCards)
@@ -677,6 +724,8 @@ public class RunDataManager
         _wonWithCard.Merge(other._wonWithCard);
         _wonWithRelic.Merge(other._wonWithRelic);
         _pickedAncientRelic.Merge(other._pickedAncientRelic);
+        foreach (var (key, val) in other._relicFloorSums)   { _relicFloorSums.TryGetValue(key, out int e);   _relicFloorSums[key]   = e + val; }
+        foreach (var (key, val) in other._relicFloorCounts) { _relicFloorCounts.TryGetValue(key, out int e); _relicFloorCounts[key] = e + val; }
         _pickedFromCardReward.Merge(other._pickedFromCardReward);
         _boughtCardFromShop.Merge(other._boughtCardFromShop);
         _boughtRelicFromShop.Merge(other._boughtRelicFromShop);
@@ -778,6 +827,13 @@ public class RunDataManager
 
     public float GetCardWinPercentage(CardVariantKey key)         => _wonWithCard.SuccessRate(key);
     public float GetRelicWinPercentage(ModelId id)                => _wonWithRelic.SuccessRate(id);
+
+    public float? GetRelicAvgFloor(ModelId id)
+    {
+        _relicFloorCounts.TryGetValue(id, out int count);
+        if (count == 0) return null;
+        return _relicFloorSums[id] / (float)count;
+    }
     public float GetAncientPickPercentage(LocString title)        => _pickedAncientRelic.SuccessRate(title.LocEntryKey);
     public float GetCardRewardPickPercentage(CardVariantKey key)  => _pickedFromCardReward.SuccessRate(key);
     public float GetCardBuyPercentage(CardVariantKey key)         => _boughtCardFromShop.SuccessRate(key);
@@ -788,6 +844,7 @@ public class RunDataManager
     public float GetPotionDiscardRate(ModelId id)    => _potionLifecycle.DiscardRate(id);
 
     public float? GetCardAvgFloorAdded(CardVariantKey key)      => _cardLifecycle.AvgFloorAdded(key);
+    public float? GetCardAvgDeckSizeAtPick(CardVariantKey key)  => _cardLifecycle.AvgDeckSizeAtPick(key);
     public float  GetCardRemovalRate(CardVariantKey key)        => _cardLifecycle.RemovalRate(key);
     public float  GetCardUpgradeRate(ModelId id)                => _cardLifecycle.UpgradeRate(id);
     public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
@@ -863,9 +920,9 @@ public class RunDataManager
         if (!_monsterEncounters.TryGetValue(key, out var entries) || entries.Count == 0)
             return null;
 
-        float n = entries.Count;
         return new MonsterEncounterData
         {
+            EntryHp     = (int)Math.Round(entries.Average(e => e.EntryHp)),
             TurnsTaken  = (int)Math.Round(entries.Average(e => e.TurnsTaken)),
             DamageTaken = (int)Math.Round(entries.Average(e => e.DamageTaken)),
             GoldGained  = (int)Math.Round(entries.Average(e => e.GoldGained)),

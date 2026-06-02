@@ -22,6 +22,7 @@ public static class CardModelHoverTipsPatch
         var variantKey = new CardVariantKey(__instance.Id, __instance.CurrentUpgradeLevel, __instance.Enchantment?.Id);
 
         float? avgFloor       = rdm.GetCardAvgFloorAdded(variantKey);
+        float? avgDeckSize    = rdm.GetCardAvgDeckSizeAtPick(variantKey);
         float winPct         = rdm.GetCardWinPercentage(variantKey)        * 100f;
         float rewardPickPct  = rdm.GetCardRewardPickPercentage(variantKey) * 100f;
         float purchasePct    = rdm.GetCardBuyPercentage(variantKey)        * 100f;
@@ -38,10 +39,11 @@ public static class CardModelHoverTipsPatch
             ? $"{topEnchant.Value.EnchantmentId.Entry} ({topEnchant.Value.Rate * 100f:F1}%)"
             : "None";
 
-        string avgFloorStr = avgFloor.HasValue ? $"{avgFloor.Value:F1}" : "N/A";
+        string avgFloorStr    = avgFloor.HasValue    ? $"{avgFloor.Value:F1}"    : "N/A";
+        string avgDeckSizeStr = avgDeckSize.HasValue ? $"{avgDeckSize.Value:F1}" : "N/A";
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
-            $"Avg Floor Added: {avgFloorStr}\n" +
+            $"Avg Floor Added: {avgFloorStr} (avg deck size: {avgDeckSizeStr})\n" +
             $"Win Rate: {winPct:F1}%\n" +
             $"Reward Pick Rate: {rewardPickPct:F1}%\n" +
             $"Shop Buy Rate: {purchasePct:F1}%\n" +
