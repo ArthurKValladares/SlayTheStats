@@ -1,3 +1,4 @@
+using SlayTheStats.SlayTheStatsCode.Config;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Entities.RestSite;
@@ -17,6 +18,8 @@ public static class RestSiteOptionHoverPatch
 
     public static void Postfix(RestSiteOption? option)
     {
+        if (!SlayTheStatsConfig.ShowStatsHoverTips) return;
+
         // Always remove the previous tip first
         if (_lastHoveredButton != null)
         {

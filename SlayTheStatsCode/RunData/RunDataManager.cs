@@ -336,6 +336,10 @@ public class RunDataManager
     private readonly Dictionary<ModelId, Dictionary<ModelId, int>> _enchantmentCounts = new();
     private readonly SuccessRateTracker<ModelId> _boughtRelicFromShop = new();
     
+    private readonly Dictionary<ModelId, int> _eventVisits        = new();
+    private readonly Dictionary<string, int>  _eventOptionCounts   = new(); // key = option Title.LocEntryKey
+    private readonly SuccessRateTracker<string> _eventOptionWinRate = new();
+
     private readonly Dictionary<string, int> _restSiteChoiceCounts  = new();
     private readonly Dictionary<string, int> _restSiteChoiceHpSums  = new(); // sum of current hp at time of choice
     private int _restSiteVisits;
@@ -404,7 +408,8 @@ public class RunDataManager
             {
                 _relicFloorSums.TryGetValue(relicId, out int sum);
                 _relicFloorSums[relicId] = sum + relic.FloorAddedToDeck.Value;
-                Increment(_relicFloorCounts, relicId);
+                _relicFloorCounts.TryGetValue(relicId, out int cnt);
+                _relicFloorCounts[relicId] = cnt + 1;
             }
         }
     }
@@ -635,6 +640,29 @@ public class RunDataManager
         }
     }
 
+    private void RecordEventData(RunHistory runHistory, ulong playerId)
+    {
+        foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId))
+        {
+            if (playerStat.EventChoices.Count == 0) continue;
+
+            // Track visit count keyed by the event room's model ID
+            ModelId? eventId = entry.Rooms.Count > 0 ? entry.Rooms[0].ModelId : null;
+            if (eventId != null)
+            {
+                _eventVisits.TryGetValue(eventId, out int visits);
+                _eventVisits[eventId] = visits + 1;
+            }
+
+            foreach (EventOptionHistoryEntry choice in playerStat.EventChoices)
+            {
+                string optionKey = choice.Title.LocEntryKey;
+                Increment(_eventOptionCounts, optionKey);
+                _eventOptionWinRate.Record(optionKey, runHistory.Win);
+            }
+        }
+    }
+
     private void RecordRestSiteChoiceData(RunHistory runHistory, ulong playerId)
     {
         foreach (var (_, playerStat) in IterateMapHistory(runHistory, playerId,
@@ -712,6 +740,7 @@ public class RunDataManager
             
             RecordMonsterEncounterData(runHistory, player.Id);
 
+            RecordEventData(runHistory, player.Id);
             RecordRestSiteChoiceData(runHistory, player.Id);
             RecordPotionLifecycleData(runHistory, player.Id);
             RecordCardLifecycleData(runHistory, player.Id);
@@ -752,6 +781,9 @@ public class RunDataManager
             existing.AddRange(encounters);
         }
         
+        foreach (var (k, v) in other._eventVisits)      { _eventVisits.TryGetValue(k, out int e);      _eventVisits[k]      = e + v; }
+        foreach (var (k, v) in other._eventOptionCounts) { _eventOptionCounts.TryGetValue(k, out int e); _eventOptionCounts[k] = e + v; }
+        _eventOptionWinRate.Merge(other._eventOptionWinRate);
         _restSiteVisits += other._restSiteVisits;
         MergeStringDicts(_restSiteChoiceCounts, other._restSiteChoiceCounts);
         MergeStringDicts(_restSiteChoiceHpSums, other._restSiteChoiceHpSums);
@@ -850,6 +882,18 @@ public class RunDataManager
     public float? GetCardAvgRemovePriority(CardVariantKey key)  => _cardLifecycle.AvgRemovePriority(key);
     public float? GetCardAvgUpgradePriority(ModelId id)         => _cardLifecycle.AvgUpgradePriority(id);
 
+    // Fraction of visits to this event where this option was chosen
+    public float GetEventOptionPickRate(ModelId eventId, string optionKey)
+    {
+        _eventVisits.TryGetValue(eventId, out int visits);
+        if (visits == 0) return 0f;
+        _eventOptionCounts.TryGetValue(optionKey, out int picks);
+        return picks / (float)visits;
+    }
+
+    public float GetEventOptionWinRate(string optionKey) =>
+        _eventOptionWinRate.SuccessRate(optionKey);
+
     // Fraction of campfire visits where this option was chosen (e.g. "HEAL", "SMITH")
     public float GetRestSiteChoiceRate(string optionId)
     {
@@ -897,8 +941,8 @@ public class RunDataManager
         return seen == 0 ? 0f : _encounterKills.GetValueOrDefault(key) / (float)seen;
     }
 
-    // 1 = most lethal. Returns null if this encounter has never been seen.
-    public int? GetEncounterLethalityRank(ModelId roomId, List<ModelId> monsterIds)
+    // 1 = most lethal by kill rate. Returns null if this encounter has never been seen.
+    public int? GetEncounterLethalityRankByRate(ModelId roomId, List<ModelId> monsterIds)
     {
         var key = (roomId, monsterIds);
         if (!_encounterSeen.ContainsKey(key)) return null;
@@ -910,6 +954,22 @@ public class RunDataManager
             if (EncounterKeyComparer.Instance.Equals(otherKey, key)) continue;
             float otherRate = otherSeen == 0 ? 0f : _encounterKills.GetValueOrDefault(otherKey) / (float)otherSeen;
             if (otherRate > myRate) rank++;
+        }
+        return rank;
+    }
+
+    // 1 = most lethal by total kill count. Returns null if this encounter has never been seen.
+    public int? GetEncounterLethalityRankByCount(ModelId roomId, List<ModelId> monsterIds)
+    {
+        var key = (roomId, monsterIds);
+        if (!_encounterSeen.ContainsKey(key)) return null;
+
+        int myKills = _encounterKills.GetValueOrDefault(key);
+        int rank = 1;
+        foreach (var (otherKey, _) in _encounterSeen)
+        {
+            if (EncounterKeyComparer.Instance.Equals(otherKey, key)) continue;
+            if (_encounterKills.GetValueOrDefault(otherKey) > myKills) rank++;
         }
         return rank;
     }

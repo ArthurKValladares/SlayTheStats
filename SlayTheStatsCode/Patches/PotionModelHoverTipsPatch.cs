@@ -1,3 +1,4 @@
+using SlayTheStats.SlayTheStatsCode.Config;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
@@ -10,6 +11,7 @@ public static class PotionModelHoverTipsPatch
 {
     public static void Postfix(PotionModel __instance, ref IEnumerable<IHoverTip> __result)
     {
+        if (!SlayTheStatsConfig.ShowStatsHoverTips) return;
         if (__instance.IsCanonical) return;
 
         var tip = new HoverTip();

@@ -1,3 +1,4 @@
+using SlayTheStats.SlayTheStatsCode.Config;
 ﻿using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Localization;
@@ -12,6 +13,7 @@ public static class RelicModelHoverTipsPatch
 {
     public static void Postfix(RelicModel __instance, ref IEnumerable<IHoverTip> __result)
     {
+        if (!SlayTheStatsConfig.ShowStatsHoverTips) return;
         if (__instance.IsCanonical) return;
 
         // Construct HoverTip

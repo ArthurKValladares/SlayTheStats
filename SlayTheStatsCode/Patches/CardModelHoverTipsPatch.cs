@@ -1,3 +1,4 @@
+using SlayTheStats.SlayTheStatsCode.Config;
 ﻿using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
@@ -10,6 +11,7 @@ public static class CardModelHoverTipsPatch
 {
     public static void Postfix(CardModel __instance, ref IEnumerable<IHoverTip> __result)
     {
+        if (!SlayTheStatsConfig.ShowStatsHoverTips) return;
         if (__instance.IsCanonical) return;
 
         // Construct HoverTip

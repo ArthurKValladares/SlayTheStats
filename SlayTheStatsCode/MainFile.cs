@@ -1,7 +1,9 @@
+using BaseLib.Config;
 using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using SlayTheStats.SlayTheStatsCode.Config;
 using SlayTheStats.SlayTheStatsCode.RunData;
 
 namespace SlayTheStats.SlayTheStatsCode;
@@ -19,6 +21,8 @@ public partial class MainFile : Node
     {
         //If you want to use scripts defined in your mod for Godot scenes, uncomment the following line.
         //Godot.Bridge.ScriptManagerBridge.LookupScriptsInAssembly(Assembly.GetExecutingAssembly());
+
+        ModConfigRegistry.Register(ModId, new SlayTheStatsConfig());
 
         Harmony harmony = new(ModId);
 
