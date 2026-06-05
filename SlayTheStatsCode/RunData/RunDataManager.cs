@@ -325,7 +325,24 @@ public class CardLifecycleTracker
 
 public class RunDataManager
 {
-    private static readonly Lazy<RunDataManager> Lazy = new(ConstructDefault);
+    private static readonly Dictionary<int, RunDataManager> _instances = new();
+
+    // Set when a run starts via RunManager.RunStarted subscription in MainFile
+    public static int CurrentAscension { get; private set; }
+    internal static void SetCurrentAscension(int ascension) => CurrentAscension = ascension;
+
+    public static RunDataManager GetInstance(int ascension)
+    {
+        lock (_instances)
+        {
+            if (!_instances.TryGetValue(ascension, out var instance))
+            {
+                instance = new RunDataManager();
+                _instances[ascension] = instance;
+            }
+            return instance;
+        }
+    }
     
     private readonly SuccessRateTracker<CardVariantKey> _wonWithCard = new();
     private readonly SuccessRateTracker<ModelId> _wonWithRelic = new();
@@ -353,13 +370,6 @@ public class RunDataManager
     private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterSeen  = new(EncounterKeyComparer.Instance);
     private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterKills = new(EncounterKeyComparer.Instance);
     
-    private static RunDataManager ConstructDefault()
-    {
-        RunDataManager runDataManager = new RunDataManager();
-        return runDataManager;
-    }
-
-    public static RunDataManager Instance => Lazy.Value;
 
     private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
         RunHistory runHistory,
@@ -804,10 +814,10 @@ public class RunDataManager
         }
     }
     
-    public void LoadAllRuns()
+    public static void LoadAllRuns()
     {
         Stopwatch stopwatch = Stopwatch.StartNew();
-        
+
         SaveManager saveManager = SaveManager.Instance;
         List<string> runHistoryFileNames;
 
@@ -821,35 +831,41 @@ public class RunDataManager
             Log.Error($"Error getting run history files: {ex.Message}");
             return;
         }
-        
+
         int loaded = 0;
         object mergeLock = new object();
-
         ulong localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformType.Steam);
+
         Parallel.ForEach(
             runHistoryFileNames,
-            // each thread gets its own local instance
-            () => new RunDataManager(),
-            (name, _, localManager) =>
+            // each thread gets its own per-ascension local managers
+            () => new Dictionary<int, RunDataManager>(),
+            (name, _, localManagers) =>
             {
                 ReadSaveResult<RunHistory> result = SaveManager.Instance.LoadRunHistory(name);
                 if (result.Success && result.SaveData != null)
                 {
+                    int asc = result.SaveData.Ascension;
+                    if (!localManagers.TryGetValue(asc, out var localManager))
+                    {
+                        localManager = new RunDataManager();
+                        localManagers[asc] = localManager;
+                    }
                     localManager.AddRunToHistory(result.SaveData, localPlayerId);
                     Interlocked.Increment(ref loaded);
                 }
-                return localManager;
+                return localManagers;
             },
-            // called once per thread when it finishes
-            localManager =>
+            localManagers =>
             {
                 lock (mergeLock)
                 {
-                    Merge(localManager);
+                    foreach (var (asc, localManager) in localManagers)
+                        GetInstance(asc).Merge(localManager);
                 }
             }
         );
-        
+
         TimeSpan ts = stopwatch.Elapsed;
         Log.Info($"Loaded {loaded} run history files in {ts.TotalMilliseconds}ms - {ts.Minutes:00}:{ts.Seconds:00}:{ts.Milliseconds:00}");
     }

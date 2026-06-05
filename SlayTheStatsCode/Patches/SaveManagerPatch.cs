@@ -12,6 +12,6 @@ public static class SaveManagerPatch
     public static void Postfix(RunHistory history)
     {
         ulong localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformType.Steam);
-        RunDataManager.Instance.AddRunToHistory(history, localPlayerId);
+        RunDataManager.GetInstance(history.Ascension).AddRunToHistory(history, localPlayerId);
     }
 }

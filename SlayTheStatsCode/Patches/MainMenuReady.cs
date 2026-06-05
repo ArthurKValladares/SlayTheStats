@@ -11,6 +11,6 @@ public static class MainMenuReadyPatch
     private static void Postfix()
     {
         Log.Info($"{MainFile.ModId}: Loading RunHistory data.");
-        RunDataManager.Instance.LoadAllRuns();
+        RunDataManager.LoadAllRuns();
     }
 }

@@ -20,7 +20,7 @@ public static class CardModelHoverTipsPatch
         
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
 
-        RunDataManager rdm = RunDataManager.Instance;
+        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
         var variantKey = new CardVariantKey(__instance.Id, __instance.CurrentUpgradeLevel, __instance.Enchantment?.Id);
 
         float? avgFloor       = rdm.GetCardAvgFloorAdded(variantKey);

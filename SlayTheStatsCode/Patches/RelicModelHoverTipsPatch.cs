@@ -21,7 +21,7 @@ public static class RelicModelHoverTipsPatch
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
 
-        RunDataManager rdm = RunDataManager.Instance;
+        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
         float winPct         = rdm.GetRelicWinPercentage(__instance.Id)          * 100f;
         float ancientPickPct = rdm.GetAncientPickPercentage(__instance.Title)    * 100f;
         float purchasePct    = rdm.GetRelicPurchasePercentage(__instance.Id)     * 100f;
