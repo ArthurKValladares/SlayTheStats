@@ -377,8 +377,9 @@ public class RunDataManager
     private readonly Dictionary<ModelId, int> _relicFloorCounts = new();
 
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
-    private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterSeen  = new(EncounterKeyComparer.Instance);
-    private readonly Dictionary<(ModelId, List<ModelId>), int> _encounterKills = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterSeen       = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterKills      = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), MapPointType>  _encounterTypes      = new(EncounterKeyComparer.Instance);
     
 
     private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
@@ -536,6 +537,7 @@ public class RunDataManager
 
             _encounterSeen.TryGetValue(key, out int seen);
             _encounterSeen[key] = seen + 1;
+            _encounterTypes[key] = entry.MapPointType;
         }
 
         // Record a kill for the encounter that ended the run, identified by matching room ModelId.
@@ -789,6 +791,8 @@ public class RunDataManager
             _encounterKills.TryGetValue(key, out int existing);
             _encounterKills[key] = existing + count;
         }
+        foreach (var (key, type) in other._encounterTypes)
+            _encounterTypes[key] = type;
 
         // TODO: Custom structure for _monsterEncounters with its own merge function
         foreach (var (key, encounters) in other._monsterEncounters)
@@ -980,34 +984,38 @@ public class RunDataManager
         return seen == 0 ? 0f : _encounterKills.GetValueOrDefault(key) / (float)seen;
     }
 
-    // 1 = most lethal by kill rate. Returns null if this encounter has never been seen.
+    // 1 = most lethal by kill rate among encounters of the same type (monster/elite/boss).
     public int? GetEncounterLethalityRankByRate(ModelId roomId, List<ModelId> monsterIds)
     {
         var key = (roomId, monsterIds);
         if (!_encounterSeen.ContainsKey(key)) return null;
 
+        MapPointType myType = _encounterTypes.GetValueOrDefault(key);
         float myRate = GetEncounterKillRate(roomId, monsterIds);
         int rank = 1;
         foreach (var (otherKey, otherSeen) in _encounterSeen)
         {
             if (EncounterKeyComparer.Instance.Equals(otherKey, key)) continue;
+            if (_encounterTypes.GetValueOrDefault(otherKey) != myType) continue;
             float otherRate = otherSeen == 0 ? 0f : _encounterKills.GetValueOrDefault(otherKey) / (float)otherSeen;
             if (otherRate > myRate) rank++;
         }
         return rank;
     }
 
-    // 1 = most lethal by total kill count. Returns null if this encounter has never been seen.
+    // 1 = most lethal by total kill count among encounters of the same type (monster/elite/boss).
     public int? GetEncounterLethalityRankByCount(ModelId roomId, List<ModelId> monsterIds)
     {
         var key = (roomId, monsterIds);
         if (!_encounterSeen.ContainsKey(key)) return null;
 
+        MapPointType myType = _encounterTypes.GetValueOrDefault(key);
         int myKills = _encounterKills.GetValueOrDefault(key);
         int rank = 1;
         foreach (var (otherKey, _) in _encounterSeen)
         {
             if (EncounterKeyComparer.Instance.Equals(otherKey, key)) continue;
+            if (_encounterTypes.GetValueOrDefault(otherKey) != myType) continue;
             if (_encounterKills.GetValueOrDefault(otherKey) > myKills) rank++;
         }
         return rank;

@@ -35,8 +35,14 @@ public static class CreatureHoverTipsPatch
         float killRateAll = rdmAll.GetEncounterKillRate(room.ModelId, room.MonsterIds) * 100f;
         int?  rankByRate  = rdm.GetEncounterLethalityRankByRate(room.ModelId, room.MonsterIds);
         int?  rankByCount = rdm.GetEncounterLethalityRankByCount(room.ModelId, room.MonsterIds);
-        string rankByRateStr  = rankByRate.HasValue  ? $"#{rankByRate.Value}"  : "N/A";
-        string rankByCountStr = rankByCount.HasValue ? $"#{rankByCount.Value}" : "N/A";
+        string encounterTypeStr = history.MapPointType switch
+        {
+            MegaCrit.Sts2.Core.Map.MapPointType.Elite => "elite",
+            MegaCrit.Sts2.Core.Map.MapPointType.Boss  => "boss",
+            _                                          => "monster",
+        };
+        string rankByRateStr  = rankByRate.HasValue  ? $"#{rankByRate.Value} among {encounterTypeStr}s"  : "N/A";
+        string rankByCountStr = rankByCount.HasValue ? $"#{rankByCount.Value} among {encounterTypeStr}s" : "N/A";
 
         string AllAvg(int patchVal, MonsterEncounterData? all, Func<MonsterEncounterData, int> selector)
             => all != null ? $"{patchVal} (all: {selector(all)})" : $"{patchVal}";
