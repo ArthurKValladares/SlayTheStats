@@ -3,6 +3,7 @@ using Godot;
 using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
+using MegaCrit.Sts2.Core.Debug;
 using MegaCrit.Sts2.Core.Runs;
 using SlayTheStats.SlayTheStatsCode.Config;
 using SlayTheStats.SlayTheStatsCode.RunData;
@@ -25,8 +26,11 @@ public partial class MainFile : Node
 
         ModConfigRegistry.Register(ModId, new SlayTheStatsConfig());
 
+        string currentBuildId = ReleaseInfoManager.Instance.ReleaseInfo?.Version ?? "";
+        RunDataManager.SetCurrentRun(0, currentBuildId);
+
         RunManager.Instance.RunStarted += state =>
-            RunDataManager.SetCurrentAscension(state.AscensionLevel);
+            RunDataManager.SetCurrentRun(state.AscensionLevel, currentBuildId);
 
         Harmony harmony = new(ModId);
 

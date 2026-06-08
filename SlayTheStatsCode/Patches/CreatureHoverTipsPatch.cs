@@ -23,7 +23,7 @@ public static class CreatureHoverTipsPatch
         MapPointRoomHistoryEntry room = history.Rooms[^1];
         if (room.ModelId == null) return;
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
+        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
         var averages = rdm.GetEncounterAverages(room.ModelId, room.MonsterIds);
         if (averages == null) return;
 

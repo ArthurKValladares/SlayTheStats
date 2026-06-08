@@ -17,7 +17,7 @@ public static class PotionModelHoverTipsPatch
         var tip = new HoverTip();
         object boxed = tip;
 
-        RunDataManager runDataManager = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
+        RunDataManager runDataManager = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
         float rewardPickRate = runDataManager.GetPotionRewardPickRate(__instance.Id) * 100.0f;
         float shopBuyRate    = runDataManager.GetPotionShopBuyRate(__instance.Id)    * 100.0f;
         float useRate        = runDataManager.GetPotionUseRate(__instance.Id)        * 100.0f;

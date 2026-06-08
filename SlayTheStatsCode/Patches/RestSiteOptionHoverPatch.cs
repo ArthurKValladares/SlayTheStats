@@ -32,7 +32,7 @@ public static class RestSiteOptionHoverPatch
         var button = NRestSiteRoom.Instance?.GetButtonForOption(option);
         if (button == null) return;
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
+        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
         float choiceRate = rdm.GetRestSiteChoiceRate(option.OptionId) * 100f;
         float? avgHp     = rdm.GetRestSiteChoiceAvgHp(option.OptionId);
         string avgHpStr  = avgHp.HasValue ? $"{avgHp.Value:F1}" : "N/A";

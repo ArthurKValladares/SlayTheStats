@@ -325,20 +325,27 @@ public class CardLifecycleTracker
 
 public class RunDataManager
 {
-    private static readonly Dictionary<int, RunDataManager> _instances = new();
+    private static readonly Dictionary<(int ascension, string buildId), RunDataManager> _instances = new();
 
     // Set when a run starts via RunManager.RunStarted subscription in MainFile
-    public static int CurrentAscension { get; private set; }
-    internal static void SetCurrentAscension(int ascension) => CurrentAscension = ascension;
+    public static int    CurrentAscension { get; private set; }
+    public static string CurrentBuildId   { get; private set; } = "";
 
-    public static RunDataManager GetInstance(int ascension)
+    internal static void SetCurrentRun(int ascension, string buildId)
     {
+        CurrentAscension = ascension;
+        CurrentBuildId   = buildId;
+    }
+
+    public static RunDataManager GetInstance(int ascension, string buildId)
+    {
+        var key = (ascension, buildId);
         lock (_instances)
         {
-            if (!_instances.TryGetValue(ascension, out var instance))
+            if (!_instances.TryGetValue(key, out var instance))
             {
                 instance = new RunDataManager();
-                _instances[ascension] = instance;
+                _instances[key] = instance;
             }
             return instance;
         }
@@ -839,17 +846,17 @@ public class RunDataManager
         Parallel.ForEach(
             runHistoryFileNames,
             // each thread gets its own per-ascension local managers
-            () => new Dictionary<int, RunDataManager>(),
+            () => new Dictionary<(int, string), RunDataManager>(),
             (name, _, localManagers) =>
             {
                 ReadSaveResult<RunHistory> result = SaveManager.Instance.LoadRunHistory(name);
                 if (result.Success && result.SaveData != null)
                 {
-                    int asc = result.SaveData.Ascension;
-                    if (!localManagers.TryGetValue(asc, out var localManager))
+                    var key = (result.SaveData.Ascension, result.SaveData.BuildId);
+                    if (!localManagers.TryGetValue(key, out var localManager))
                     {
                         localManager = new RunDataManager();
-                        localManagers[asc] = localManager;
+                        localManagers[key] = localManager;
                     }
                     localManager.AddRunToHistory(result.SaveData, localPlayerId);
                     Interlocked.Increment(ref loaded);
@@ -860,8 +867,8 @@ public class RunDataManager
             {
                 lock (mergeLock)
                 {
-                    foreach (var (asc, localManager) in localManagers)
-                        GetInstance(asc).Merge(localManager);
+                    foreach (var ((asc, buildId), localManager) in localManagers)
+                        GetInstance(asc, buildId).Merge(localManager);
                 }
             }
         );

@@ -22,7 +22,7 @@ public static class EventOptionHoverPatch
         ModelId eventId = __instance.Event.Id;
         string optionKey = __instance.Option.Title.LocEntryKey;
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension);
+        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
         float pickRate = rdm.GetEventOptionPickRate(eventId, optionKey) * 100f;
         float winRate  = rdm.GetEventOptionWinRate(optionKey)           * 100f;
 
