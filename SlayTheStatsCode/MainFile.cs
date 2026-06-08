@@ -5,6 +5,7 @@ using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Modding;
 using MegaCrit.Sts2.Core.Debug;
 using MegaCrit.Sts2.Core.Runs;
+using SlayTheStats.SlayTheStatsCode.LiveStats;
 using SlayTheStats.SlayTheStatsCode.Config;
 using SlayTheStats.SlayTheStatsCode.RunData;
 
@@ -30,7 +31,12 @@ public partial class MainFile : Node
         RunDataManager.SetCurrentRun(0, currentBuildId);
 
         RunManager.Instance.RunStarted += state =>
+        {
             RunDataManager.SetCurrentRun(state.AscensionLevel, currentBuildId);
+            InRunStatsTracker.Reset();
+            // If current_run.irs exists this is a continued run — restore saved partial data.
+            SupplementaryStatsManager.TryRestoreIfContinued(state.AscensionLevel, currentBuildId);
+        };
 
         Harmony harmony = new(ModId);
 

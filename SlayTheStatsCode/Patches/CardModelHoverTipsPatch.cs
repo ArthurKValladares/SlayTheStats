@@ -1,7 +1,8 @@
 using SlayTheStats.SlayTheStatsCode.Config;
-﻿using HarmonyLib;
+using HarmonyLib;
 using MegaCrit.Sts2.Core.HoverTips;
 using MegaCrit.Sts2.Core.Models;
+using SlayTheStats.SlayTheStatsCode.LiveStats;
 using SlayTheStats.SlayTheStatsCode.RunData;
 
 namespace SlayTheStats.SlayTheStatsCode.Patches;
@@ -51,8 +52,16 @@ public static class CardModelHoverTipsPatch
         string avgFloorStr    = avgFloor.HasValue    ? $"{avgFloor.Value:F1}"    : "N/A";
         string avgDeckSizeStr = avgDeckSize.HasValue ? $"{avgDeckSize.Value:F1}" : "N/A";
 
+        var dpStats    = SupplementaryStatsManager.GetCardDrawPlayStats(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId, __instance.Id.Entry);
+        var dpStatsAll = SupplementaryStatsManager.GetCardDrawPlayStatsAllPatches(RunDataManager.CurrentAscension, __instance.Id.Entry);
+
+        string drawPlayStr = dpStats.HasValue
+            ? $"Drawn: {dpStats.Value.drawn} | Played: {dpStats.Value.played} | Play Rate: {dpStats.Value.playRate * 100f:F1}% (all patches: {dpStatsAll?.playRate * 100f:F1}%)"
+            : "No draw/play data yet";
+
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Avg Floor Added: {avgFloorStr} (avg deck size: {avgDeckSizeStr})\n" +
+            $"{drawPlayStr}\n" +
             $"Win Rate: {winPct:F1}% (all patches: {winPctAll:F1}%)\n" +
             $"Reward Pick Rate: {rewardPickPct:F1}% (all: {rewardPickPctAll:F1}%)\n" +
             $"Shop Buy Rate: {purchasePct:F1}% (all: {purchasePctAll:F1}%)\n" +

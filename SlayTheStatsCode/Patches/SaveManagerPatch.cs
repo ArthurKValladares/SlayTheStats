@@ -2,6 +2,7 @@
 using MegaCrit.Sts2.Core.Platform;
 using MegaCrit.Sts2.Core.Runs;
 using MegaCrit.Sts2.Core.Saves;
+using SlayTheStats.SlayTheStatsCode.LiveStats;
 using SlayTheStats.SlayTheStatsCode.RunData;
 
 namespace SlayTheStats.SlayTheStatsCode.Patches;
@@ -14,5 +15,8 @@ public static class SaveManagerPatch
         ulong localPlayerId = PlatformUtil.GetLocalPlayerId(PlatformType.Steam);
         RunDataManager.GetInstance(history.Ascension, history.BuildId).AddRunToHistory(history, localPlayerId);
         RunDataManager.GetInstance(history.Ascension, RunDataManager.AllPatches).AddRunToHistory(history, localPlayerId);
+
+        SupplementaryStatsManager.SaveForRun(history);
+        InRunStatsTracker.Reset();
     }
 }

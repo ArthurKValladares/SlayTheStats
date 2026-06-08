@@ -1,6 +1,7 @@
 ﻿using HarmonyLib;
 using MegaCrit.Sts2.Core.Logging;
 using MegaCrit.Sts2.Core.Nodes.Screens.MainMenu;
+using SlayTheStats.SlayTheStatsCode.LiveStats;
 using SlayTheStats.SlayTheStatsCode.RunData;
 
 namespace SlayTheStats.SlayTheStatsCode.Patches;
@@ -12,5 +13,6 @@ public static class MainMenuReadyPatch
     {
         Log.Info($"{MainFile.ModId}: Loading RunHistory data.");
         RunDataManager.LoadAllRuns();
+        SupplementaryStatsManager.LoadAll();
     }
 }
