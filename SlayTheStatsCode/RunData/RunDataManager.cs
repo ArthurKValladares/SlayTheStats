@@ -377,9 +377,10 @@ public class RunDataManager
     private readonly Dictionary<ModelId, int> _relicFloorCounts = new();
 
     private readonly Dictionary<(ModelId, List<ModelId>), List<MonsterEncounterData>> _monsterEncounters = new(EncounterKeyComparer.Instance);
-    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterSeen       = new(EncounterKeyComparer.Instance);
-    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterKills      = new(EncounterKeyComparer.Instance);
-    private readonly Dictionary<(ModelId, List<ModelId>), MapPointType>  _encounterTypes      = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterSeen            = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterKills           = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), MapPointType>  _encounterTypes           = new(EncounterKeyComparer.Instance);
+    private readonly Dictionary<(ModelId, List<ModelId>), int>           _encounterDeathEntryHpSum  = new(EncounterKeyComparer.Instance);
     
 
     private static IEnumerable<(MapPointHistoryEntry entry, PlayerMapPointHistoryEntry playerStat)> IterateMapHistory(
@@ -545,19 +546,26 @@ public class RunDataManager
         if (runHistory.KilledByEncounter != ModelId.none)
         {
             (ModelId, List<ModelId>)? killKey = null;
-            foreach (var (entry, _) in IterateMapHistory(runHistory, playerId,
+            int killEntryHp = 0;
+            foreach (var (entry, playerStat) in IterateMapHistory(runHistory, playerId,
                          e => e.MapPointType is MapPointType.Monster or MapPointType.Elite or MapPointType.Boss))
             {
                 if (entry.Rooms.Count == 0) continue;
                 MapPointRoomHistoryEntry room = entry.Rooms[0];
                 if (room.ModelId == runHistory.KilledByEncounter)
+                {
                     killKey = (room.ModelId, room.MonsterIds.ToList());
+                    killEntryHp = playerStat.CurrentHp + playerStat.DamageTaken;
+                }
             }
 
             if (killKey.HasValue)
             {
                 _encounterKills.TryGetValue(killKey.Value, out int kills);
                 _encounterKills[killKey.Value] = kills + 1;
+
+                _encounterDeathEntryHpSum.TryGetValue(killKey.Value, out int hpSum);
+                _encounterDeathEntryHpSum[killKey.Value] = hpSum + killEntryHp;
             }
         }
     }
@@ -793,6 +801,11 @@ public class RunDataManager
         }
         foreach (var (key, type) in other._encounterTypes)
             _encounterTypes[key] = type;
+        foreach (var (key, hpSum) in other._encounterDeathEntryHpSum)
+        {
+            _encounterDeathEntryHpSum.TryGetValue(key, out int existing);
+            _encounterDeathEntryHpSum[key] = existing + hpSum;
+        }
 
         // TODO: Custom structure for _monsterEncounters with its own merge function
         foreach (var (key, encounters) in other._monsterEncounters)
@@ -975,6 +988,15 @@ public class RunDataManager
         float rate = totalEnchants == 0 ? 0f : top.Value / (float)totalEnchants;
 
         return (top.Key, rate);
+    }
+
+    // Average HP the player had entering this encounter on runs where it killed them
+    public float? GetEncounterAvgDeathEntryHp(ModelId roomId, List<ModelId> monsterIds)
+    {
+        var key = (roomId, monsterIds);
+        int kills = _encounterKills.GetValueOrDefault(key);
+        if (kills == 0) return null;
+        return _encounterDeathEntryHpSum.GetValueOrDefault(key) / (float)kills;
     }
 
     public float GetEncounterKillRate(ModelId roomId, List<ModelId> monsterIds)

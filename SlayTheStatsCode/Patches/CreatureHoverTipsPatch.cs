@@ -33,6 +33,11 @@ public static class CreatureHoverTipsPatch
 
         float killRate    = rdm.GetEncounterKillRate(room.ModelId, room.MonsterIds)    * 100f;
         float killRateAll = rdmAll.GetEncounterKillRate(room.ModelId, room.MonsterIds) * 100f;
+        float? avgDeathEntryHp    = rdm.GetEncounterAvgDeathEntryHp(room.ModelId, room.MonsterIds);
+        float? avgDeathEntryHpAll = rdmAll.GetEncounterAvgDeathEntryHp(room.ModelId, room.MonsterIds);
+        string deathHpStr = avgDeathEntryHp.HasValue
+            ? $"{avgDeathEntryHp.Value:F1} HP (all patches: {avgDeathEntryHpAll?.ToString("F1") ?? "N/A"})"
+            : "N/A";
         int?  rankByRate  = rdm.GetEncounterLethalityRankByRate(room.ModelId, room.MonsterIds);
         int?  rankByCount = rdm.GetEncounterLethalityRankByCount(room.ModelId, room.MonsterIds);
         string encounterTypeStr = history.MapPointType switch
@@ -53,6 +58,7 @@ public static class CreatureHoverTipsPatch
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Encounter Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Kill Rate: {killRate:F1}% (all patches: {killRateAll:F1}%) (rank by rate: {rankByRateStr}, rank by count: {rankByCountStr})\n" +
+            $"Avg HP when dying here: {deathHpStr}\n" +
             $"Avg Entry HP: {AllAvg(averages.EntryHp, averagesAll, e => e.EntryHp)}\n" +
             $"Avg Turns: {AllAvg(averages.TurnsTaken, averagesAll, e => e.TurnsTaken)}\n" +
             $"Avg Damage Taken: {AllAvg(averages.DamageTaken, averagesAll, e => e.DamageTaken)}\n" +
