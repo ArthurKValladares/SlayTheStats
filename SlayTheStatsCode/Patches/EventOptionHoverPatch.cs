@@ -22,16 +22,20 @@ public static class EventOptionHoverPatch
         ModelId eventId = __instance.Event.Id;
         string optionKey = __instance.Option.Title.LocEntryKey;
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
-        float pickRate = rdm.GetEventOptionPickRate(eventId, optionKey) * 100f;
-        float winRate  = rdm.GetEventOptionWinRate(optionKey)           * 100f;
+        RunDataManager rdm    = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdmAll = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.AllPatches);
+
+        float pickRate    = rdm.GetEventOptionPickRate(eventId, optionKey)    * 100f;
+        float winRate     = rdm.GetEventOptionWinRate(optionKey)              * 100f;
+        float pickRateAll = rdmAll.GetEventOptionPickRate(eventId, optionKey) * 100f;
+        float winRateAll  = rdmAll.GetEventOptionWinRate(optionKey)           * 100f;
 
         var tip = new HoverTip();
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
-            $"Pick Rate: {pickRate:F1}%\n" +
-            $"Win Rate when chosen: {winRate:F1}%");
+            $"Pick Rate: {pickRate:F1}% (all patches: {pickRateAll:F1}%)\n" +
+            $"Win Rate when chosen: {winRate:F1}% (all: {winRateAll:F1}%)");
         tip = (HoverTip)boxed;
 
         // Save original and temporarily append our tip so OnFocus shows the combined set

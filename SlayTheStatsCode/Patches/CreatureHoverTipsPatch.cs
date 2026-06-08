@@ -23,30 +23,38 @@ public static class CreatureHoverTipsPatch
         MapPointRoomHistoryEntry room = history.Rooms[^1];
         if (room.ModelId == null) return;
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdm    = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdmAll = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.AllPatches);
+
         var averages = rdm.GetEncounterAverages(room.ModelId, room.MonsterIds);
         if (averages == null) return;
 
-        float killRate   = rdm.GetEncounterKillRate(room.ModelId, room.MonsterIds) * 100f;
+        var averagesAll = rdmAll.GetEncounterAverages(room.ModelId, room.MonsterIds);
+
+        float killRate    = rdm.GetEncounterKillRate(room.ModelId, room.MonsterIds)    * 100f;
+        float killRateAll = rdmAll.GetEncounterKillRate(room.ModelId, room.MonsterIds) * 100f;
         int?  rankByRate  = rdm.GetEncounterLethalityRankByRate(room.ModelId, room.MonsterIds);
         int?  rankByCount = rdm.GetEncounterLethalityRankByCount(room.ModelId, room.MonsterIds);
         string rankByRateStr  = rankByRate.HasValue  ? $"#{rankByRate.Value}"  : "N/A";
         string rankByCountStr = rankByCount.HasValue ? $"#{rankByCount.Value}" : "N/A";
+
+        string AllAvg(int patchVal, MonsterEncounterData? all, Func<MonsterEncounterData, int> selector)
+            => all != null ? $"{patchVal} (all: {selector(all)})" : $"{patchVal}";
 
         var tip = new HoverTip();
         object boxed = tip;
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Encounter Stats");
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
-            $"Kill Rate: {killRate:F1}% (rank by rate: {rankByRateStr}, rank by count: {rankByCountStr})\n" +
-            $"Avg Entry HP: {averages.EntryHp}\n" +
-            $"Avg Turns: {averages.TurnsTaken}\n" +
-            $"Avg Damage Taken: {averages.DamageTaken}\n" +
-            $"Avg Gold Gained: {averages.GoldGained}\n" +
-            $"Avg Gold Stolen: {averages.GoldStolen}\n" +
-            $"Avg Max HP Lost: {averages.MaxHpLost}\n" +
-            $"Avg HP Healed: {averages.HpHealed}\n" +
-            $"Avg Max HP Gained: {averages.MaxHpGained}");
+            $"Kill Rate: {killRate:F1}% (all patches: {killRateAll:F1}%) (rank by rate: {rankByRateStr}, rank by count: {rankByCountStr})\n" +
+            $"Avg Entry HP: {AllAvg(averages.EntryHp, averagesAll, e => e.EntryHp)}\n" +
+            $"Avg Turns: {AllAvg(averages.TurnsTaken, averagesAll, e => e.TurnsTaken)}\n" +
+            $"Avg Damage Taken: {AllAvg(averages.DamageTaken, averagesAll, e => e.DamageTaken)}\n" +
+            $"Avg Gold Gained: {AllAvg(averages.GoldGained, averagesAll, e => e.GoldGained)}\n" +
+            $"Avg Gold Stolen: {AllAvg(averages.GoldStolen, averagesAll, e => e.GoldStolen)}\n" +
+            $"Avg Max HP Lost: {AllAvg(averages.MaxHpLost, averagesAll, e => e.MaxHpLost)}\n" +
+            $"Avg HP Healed: {AllAvg(averages.HpHealed, averagesAll, e => e.HpHealed)}\n" +
+            $"Avg Max HP Gained: {AllAvg(averages.MaxHpGained, averagesAll, e => e.MaxHpGained)}");
 
         tip = (HoverTip)boxed;
 

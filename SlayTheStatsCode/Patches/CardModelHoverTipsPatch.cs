@@ -20,7 +20,8 @@ public static class CardModelHoverTipsPatch
         
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdm    = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdmAll = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.AllPatches);
         var variantKey = new CardVariantKey(__instance.Id, __instance.CurrentUpgradeLevel, __instance.Enchantment?.Id);
 
         float? avgFloor       = rdm.GetCardAvgFloorAdded(variantKey);
@@ -32,6 +33,12 @@ public static class CardModelHoverTipsPatch
         float upgradePct     = rdm.GetCardUpgradeRate(__instance.Id)       * 100f;
         float? removePriority  = rdm.GetCardAvgRemovePriority(variantKey);
         float? upgradePriority = rdm.GetCardAvgUpgradePriority(__instance.Id);
+
+        float winPctAll        = rdmAll.GetCardWinPercentage(variantKey)        * 100f;
+        float rewardPickPctAll = rdmAll.GetCardRewardPickPercentage(variantKey) * 100f;
+        float purchasePctAll   = rdmAll.GetCardBuyPercentage(variantKey)        * 100f;
+        float removalPctAll    = rdmAll.GetCardRemovalRate(variantKey)          * 100f;
+        float upgradePctAll    = rdmAll.GetCardUpgradeRate(__instance.Id)       * 100f;
 
         string removePriorityStr  = removePriority.HasValue  ? $"{removePriority.Value:F1}"  : "N/A";
         string upgradePriorityStr = upgradePriority.HasValue ? $"{upgradePriority.Value:F1}" : "N/A";
@@ -46,11 +53,11 @@ public static class CardModelHoverTipsPatch
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Avg Floor Added: {avgFloorStr} (avg deck size: {avgDeckSizeStr})\n" +
-            $"Win Rate: {winPct:F1}%\n" +
-            $"Reward Pick Rate: {rewardPickPct:F1}%\n" +
-            $"Shop Buy Rate: {purchasePct:F1}%\n" +
-            $"Removal Rate: {removalPct:F1}% (avg priority: {removePriorityStr})\n" +
-            $"Upgrade Rate: {upgradePct:F1}% (avg priority: {upgradePriorityStr})\n" +
+            $"Win Rate: {winPct:F1}% (all patches: {winPctAll:F1}%)\n" +
+            $"Reward Pick Rate: {rewardPickPct:F1}% (all: {rewardPickPctAll:F1}%)\n" +
+            $"Shop Buy Rate: {purchasePct:F1}% (all: {purchasePctAll:F1}%)\n" +
+            $"Removal Rate: {removalPct:F1}% (all: {removalPctAll:F1}%) (avg priority: {removePriorityStr})\n" +
+            $"Upgrade Rate: {upgradePct:F1}% (all: {upgradePctAll:F1}%) (avg priority: {upgradePriorityStr})\n" +
             $"Most Common Enchantment: {enchantStr}");
 
         tip = (HoverTip)boxed;

@@ -327,6 +327,9 @@ public class RunDataManager
 {
     private static readonly Dictionary<(int ascension, string buildId), RunDataManager> _instances = new();
 
+    // Sentinel used as buildId to retrieve the all-patches aggregate for an ascension
+    public const string AllPatches = "";
+
     // Set when a run starts via RunManager.RunStarted subscription in MainFile
     public static int    CurrentAscension { get; private set; }
     public static string CurrentBuildId   { get; private set; } = "";
@@ -852,13 +855,26 @@ public class RunDataManager
                 ReadSaveResult<RunHistory> result = SaveManager.Instance.LoadRunHistory(name);
                 if (result.Success && result.SaveData != null)
                 {
-                    var key = (result.SaveData.Ascension, result.SaveData.BuildId);
-                    if (!localManagers.TryGetValue(key, out var localManager))
+                    RunHistory run = result.SaveData;
+
+                    // Add to the specific-patch bucket
+                    var specificKey = (run.Ascension, run.BuildId);
+                    if (!localManagers.TryGetValue(specificKey, out var specificManager))
                     {
-                        localManager = new RunDataManager();
-                        localManagers[key] = localManager;
+                        specificManager = new RunDataManager();
+                        localManagers[specificKey] = specificManager;
                     }
-                    localManager.AddRunToHistory(result.SaveData, localPlayerId);
+                    specificManager.AddRunToHistory(run, localPlayerId);
+
+                    // Also add to the all-patches aggregate for this ascension
+                    var allKey = (run.Ascension, AllPatches);
+                    if (!localManagers.TryGetValue(allKey, out var allManager))
+                    {
+                        allManager = new RunDataManager();
+                        localManagers[allKey] = allManager;
+                    }
+                    allManager.AddRunToHistory(run, localPlayerId);
+
                     Interlocked.Increment(ref loaded);
                 }
                 return localManagers;

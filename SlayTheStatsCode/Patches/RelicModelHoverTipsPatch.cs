@@ -21,18 +21,25 @@ public static class RelicModelHoverTipsPatch
         object boxed = tip;
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
 
-        RunDataManager rdm = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
-        float winPct         = rdm.GetRelicWinPercentage(__instance.Id)          * 100f;
-        float ancientPickPct = rdm.GetAncientPickPercentage(__instance.Title)    * 100f;
-        float purchasePct    = rdm.GetRelicPurchasePercentage(__instance.Id)     * 100f;
+        RunDataManager rdm    = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdmAll = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.AllPatches);
+
+        float winPct         = rdm.GetRelicWinPercentage(__instance.Id)       * 100f;
+        float ancientPickPct = rdm.GetAncientPickPercentage(__instance.Title) * 100f;
+        float purchasePct    = rdm.GetRelicPurchasePercentage(__instance.Id)  * 100f;
         float? avgFloor      = rdm.GetRelicAvgFloor(__instance.Id);
-        string avgFloorStr   = avgFloor.HasValue ? $"{avgFloor.Value:F1}" : "N/A";
+
+        float winPctAll        = rdmAll.GetRelicWinPercentage(__instance.Id)       * 100f;
+        float ancientPickPctAll= rdmAll.GetAncientPickPercentage(__instance.Title) * 100f;
+        float purchasePctAll   = rdmAll.GetRelicPurchasePercentage(__instance.Id)  * 100f;
+
+        string avgFloorStr = avgFloor.HasValue ? $"{avgFloor.Value:F1}" : "N/A";
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
             $"Avg Floor Acquired: {avgFloorStr}\n" +
-            $"Win Rate: {winPct:F1}%\n" +
-            $"Ancient Pick Rate: {ancientPickPct:F1}%\n" +
-            $"Shop Buy Rate: {purchasePct:F1}%");
+            $"Win Rate: {winPct:F1}% (all patches: {winPctAll:F1}%)\n" +
+            $"Ancient Pick Rate: {ancientPickPct:F1}% (all: {ancientPickPctAll:F1}%)\n" +
+            $"Shop Buy Rate: {purchasePct:F1}% (all: {purchasePctAll:F1}%)");
 
         tip = (HoverTip)boxed;
         

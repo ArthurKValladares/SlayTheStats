@@ -17,14 +17,25 @@ public static class PotionModelHoverTipsPatch
         var tip = new HoverTip();
         object boxed = tip;
 
-        RunDataManager runDataManager = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
-        float rewardPickRate = runDataManager.GetPotionRewardPickRate(__instance.Id) * 100.0f;
-        float shopBuyRate    = runDataManager.GetPotionShopBuyRate(__instance.Id)    * 100.0f;
-        float useRate        = runDataManager.GetPotionUseRate(__instance.Id)        * 100.0f;
-        float discardRate    = runDataManager.GetPotionDiscardRate(__instance.Id)    * 100.0f;
+        RunDataManager rdm    = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.CurrentBuildId);
+        RunDataManager rdmAll = RunDataManager.GetInstance(RunDataManager.CurrentAscension, RunDataManager.AllPatches);
+
+        float rewardPickRate = rdm.GetPotionRewardPickRate(__instance.Id) * 100f;
+        float shopBuyRate    = rdm.GetPotionShopBuyRate(__instance.Id)    * 100f;
+        float useRate        = rdm.GetPotionUseRate(__instance.Id)        * 100f;
+        float discardRate    = rdm.GetPotionDiscardRate(__instance.Id)    * 100f;
+
+        float rewardPickRateAll = rdmAll.GetPotionRewardPickRate(__instance.Id) * 100f;
+        float shopBuyRateAll    = rdmAll.GetPotionShopBuyRate(__instance.Id)    * 100f;
+        float useRateAll        = rdmAll.GetPotionUseRate(__instance.Id)        * 100f;
+        float discardRateAll    = rdmAll.GetPotionDiscardRate(__instance.Id)    * 100f;
 
         AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Title)).SetValue(boxed, "Stats");
-        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed, $"Reward Pick Rate: {rewardPickRate:F1}%\nShop Buy Rate: {shopBuyRate:F1}%\nUse Rate: {useRate:F1}%\nDiscard Rate: {discardRate:F1}%");
+        AccessTools.Property(typeof(HoverTip), nameof(HoverTip.Description)).SetValue(boxed,
+            $"Reward Pick Rate: {rewardPickRate:F1}% (all patches: {rewardPickRateAll:F1}%)\n" +
+            $"Shop Buy Rate: {shopBuyRate:F1}% (all: {shopBuyRateAll:F1}%)\n" +
+            $"Use Rate: {useRate:F1}% (all: {useRateAll:F1}%)\n" +
+            $"Discard Rate: {discardRate:F1}% (all: {discardRateAll:F1}%)");
 
         tip = (HoverTip)boxed;
 
